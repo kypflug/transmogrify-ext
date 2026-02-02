@@ -53,7 +53,9 @@ export interface RemixMessage {
     | 'EXPORT_ARTICLE'
     | 'GET_STORAGE_STATS'
     | 'OPEN_ARTICLE'
-    | 'RESPIN_ARTICLE';
+    | 'RESPIN_ARTICLE'
+    | 'GET_ACTIVE_REMIXES'
+    | 'CANCEL_REMIX';
   payload?: RemixPayload;
 }
 
@@ -74,6 +76,7 @@ export interface RemixPayload {
   generateImages?: boolean;
   settings?: Partial<UserPreferences>;
   articleId?: string; // For article operations
+  requestId?: string; // For parallel remix tracking
 }
 
 /** Response from content script */
@@ -90,6 +93,24 @@ export interface RemixResponse {
   article?: import('./storage-service').SavedArticle;
   isFavorite?: boolean;
   stats?: { count: number; totalSize: number };
+  requestId?: string; // For parallel remix tracking
+  activeRemixes?: RemixRequest[]; // For GET_ACTIVE_REMIXES
+}
+
+/** Status of a remix operation */
+export type RemixStatus = 'idle' | 'extracting' | 'analyzing' | 'generating-images' | 'saving' | 'complete' | 'error';
+
+/** A single remix request for parallel tracking */
+export interface RemixRequest {
+  requestId: string;
+  tabId: number;
+  status: RemixStatus;
+  step: string;
+  startTime: number;
+  pageTitle: string;
+  recipeId: string;
+  error?: string;
+  articleId?: string;
 }
 
 /** Progress state for resilient operations */

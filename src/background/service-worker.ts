@@ -1,9 +1,10 @@
 /**
  * Focus Remix - Service Worker (Background Script)
  * Handles AI analysis, image generation, and saves remixed pages to IndexedDB
+ * Supports parallel remix operations with independent progress tracking
  */
 
-import { RemixMessage, RemixResponse, GeneratedImageData } from '../shared/types';
+import { RemixMessage, RemixResponse, GeneratedImageData, RemixRequest } from '../shared/types';
 import { loadPreferences, savePreferences } from '../shared/utils';
 import { analyzeWithAI } from '../shared/ai-service';
 import { getRecipe, ImagePlaceholder, BUILT_IN_RECIPES } from '../shared/recipes';
@@ -19,51 +20,110 @@ import {
   getStorageStats
 } from '../shared/storage-service';
 
-// Progress state stored in chrome.storage for resilience
-interface RemixProgress {
-  status: 'idle' | 'extracting' | 'analyzing' | 'generating-images' | 'saving' | 'complete' | 'error';
-  step: string;
-  error?: string;
-  startTime?: number;
-  pageTitle?: string;
-  recipeId?: string;
-  explanation?: string;
-  articleId?: string; // ID of saved article in IndexedDB
+// In-memory storage for AbortControllers (per request)
+const abortControllers = new Map<string, AbortController>();
+
+// In-memory storage for elapsed time intervals
+const elapsedIntervals = new Map<string, ReturnType<typeof setInterval>>();
+
+/**
+ * Generate a unique request ID
+ */
+function generateRequestId(): string {
+  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
-// Update progress in storage and badge
-async function updateProgress(progress: Partial<RemixProgress>) {
-  const current = await getProgress();
-  const updated: RemixProgress = { ...current, ...progress };
-  await chrome.storage.local.set({ remixProgress: updated });
+/**
+ * Get all active remixes from storage
+ */
+async function getActiveRemixes(): Promise<Record<string, RemixRequest>> {
+  const { activeRemixes } = await chrome.storage.local.get('activeRemixes');
+  return activeRemixes || {};
+}
+
+/**
+ * Update a specific remix request in storage
+ */
+async function updateRemixProgress(requestId: string, updates: Partial<RemixRequest>) {
+  const remixes = await getActiveRemixes();
   
-  // Update badge to show status
-  const badgeConfig: Record<string, { text: string; color: string }> = {
-    'idle': { text: '', color: '#888' },
-    'extracting': { text: '📄', color: '#2196F3' },
-    'analyzing': { text: '🤖', color: '#9C27B0' },
-    'generating-images': { text: '🎨', color: '#FF9800' },
-    'saving': { text: '💾', color: '#4CAF50' },
-    'complete': { text: '✓', color: '#4CAF50' },
-    'error': { text: '!', color: '#F44336' },
-  };
+  if (remixes[requestId]) {
+    remixes[requestId] = { ...remixes[requestId], ...updates };
+  } else {
+    // New request - updates should contain all required fields
+    remixes[requestId] = updates as RemixRequest;
+  }
   
-  const config = badgeConfig[updated.status] || badgeConfig.idle;
-  await chrome.action.setBadgeText({ text: config.text });
-  await chrome.action.setBadgeBackgroundColor({ color: config.color });
+  await chrome.storage.local.set({ activeRemixes: remixes });
+  
+  // Update badge
+  await updateBadge(remixes);
   
   // Send message to popup (if open)
   chrome.runtime.sendMessage({ 
     type: 'PROGRESS_UPDATE', 
-    progress: updated 
+    requestId,
+    progress: remixes[requestId]
   }).catch(() => {
     // Popup might be closed, that's okay
   });
 }
 
-async function getProgress(): Promise<RemixProgress> {
-  const { remixProgress } = await chrome.storage.local.get('remixProgress');
-  return remixProgress || { status: 'idle', step: '' };
+/**
+ * Remove a remix request from storage (cleanup)
+ */
+async function removeRemixRequest(requestId: string) {
+  const remixes = await getActiveRemixes();
+  delete remixes[requestId];
+  await chrome.storage.local.set({ activeRemixes: remixes });
+  await updateBadge(remixes);
+  
+  // Cleanup interval and controller
+  const interval = elapsedIntervals.get(requestId);
+  if (interval) {
+    clearInterval(interval);
+    elapsedIntervals.delete(requestId);
+  }
+  abortControllers.delete(requestId);
+}
+
+/**
+ * Update badge based on active remixes
+ */
+async function updateBadge(remixes: Record<string, RemixRequest>) {
+  const activeList = Object.values(remixes);
+  const inProgress = activeList.filter(r => 
+    !['complete', 'error', 'idle'].includes(r.status)
+  );
+  const hasError = activeList.some(r => r.status === 'error');
+  
+  if (inProgress.length === 0) {
+    // Check if any recently completed
+    const recentComplete = activeList.some(r => r.status === 'complete');
+    if (recentComplete) {
+      await chrome.action.setBadgeText({ text: '✓' });
+      await chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' });
+    } else if (hasError) {
+      await chrome.action.setBadgeText({ text: '!' });
+      await chrome.action.setBadgeBackgroundColor({ color: '#F44336' });
+    } else {
+      await chrome.action.setBadgeText({ text: '' });
+    }
+  } else if (inProgress.length === 1) {
+    // Single active - show status emoji
+    const statusEmoji: Record<string, string> = {
+      'extracting': '📄',
+      'analyzing': '🤖',
+      'generating-images': '🎨',
+      'saving': '💾',
+    };
+    await chrome.action.setBadgeText({ text: statusEmoji[inProgress[0].status] || '⏳' });
+    await chrome.action.setBadgeBackgroundColor({ color: '#9C27B0' });
+  } else {
+    // Multiple active - show count
+    await chrome.action.setBadgeText({ text: String(inProgress.length) });
+    await chrome.action.setBadgeBackgroundColor({ color: '#9C27B0' });
+  }
 }
 
 // Listen for extension installation
@@ -72,8 +132,9 @@ chrome.runtime.onInstalled.addListener((details) => {
     console.log('[Focus Remix] Extension installed');
     loadPreferences();
   }
-  // Clear any stale progress on install/update
-  updateProgress({ status: 'idle', step: '' });
+  // Clear any stale remixes on install/update
+  chrome.storage.local.set({ activeRemixes: {} });
+  chrome.action.setBadgeText({ text: '' });
 });
 
 // Handle messages from popup and content scripts
@@ -90,13 +151,63 @@ async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
       return await performRemix(message);
     }
 
+    case 'GET_ACTIVE_REMIXES': {
+      const remixes = await getActiveRemixes();
+      return { success: true, activeRemixes: Object.values(remixes) };
+    }
+
+    case 'CANCEL_REMIX': {
+      const requestId = message.payload?.requestId;
+      if (!requestId) {
+        return { success: false, error: 'No request ID provided' };
+      }
+      
+      // Abort the request
+      const controller = abortControllers.get(requestId);
+      if (controller) {
+        controller.abort();
+        console.log('[Focus Remix] Cancelled request:', requestId);
+      }
+      
+      // Update status and cleanup
+      await updateRemixProgress(requestId, { status: 'error', error: 'Cancelled by user' });
+      setTimeout(() => removeRemixRequest(requestId), 3000);
+      
+      return { success: true };
+    }
+
     case 'GET_PROGRESS': {
-      const progress = await getProgress();
-      return { success: true, progress };
+      // Legacy support - return first active remix or idle
+      const remixes = await getActiveRemixes();
+      const active = Object.values(remixes)[0];
+      if (active) {
+        return { 
+          success: true, 
+          progress: {
+            status: active.status,
+            step: active.step,
+            error: active.error,
+            startTime: active.startTime,
+            pageTitle: active.pageTitle,
+            recipeId: active.recipeId,
+            articleId: active.articleId,
+          }
+        };
+      }
+      return { success: true, progress: { status: 'idle', step: '' } };
     }
 
     case 'RESET_PROGRESS': {
-      await updateProgress({ status: 'idle', step: '', error: undefined });
+      // Clear all completed/errored remixes
+      const remixes = await getActiveRemixes();
+      const toKeep: Record<string, RemixRequest> = {};
+      for (const [id, remix] of Object.entries(remixes)) {
+        if (!['complete', 'error', 'idle'].includes(remix.status)) {
+          toKeep[id] = remix;
+        }
+      }
+      await chrome.storage.local.set({ activeRemixes: toKeep });
+      await updateBadge(toKeep);
       return { success: true };
     }
 
@@ -191,10 +302,11 @@ async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
 }
 
 /**
- * Main remix operation - extracted for clarity
+ * Main remix operation - supports parallel execution
  */
 async function performRemix(message: RemixMessage): Promise<RemixResponse> {
-  console.log('[Focus Remix] AI_ANALYZE started');
+  const requestId = generateRequestId();
+  console.log('[Focus Remix] AI_ANALYZE started, request:', requestId);
   
   // Get the recipe
   const recipeId = message.payload?.recipeId || 'focus';
@@ -204,62 +316,68 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
   console.log('[Focus Remix] Recipe:', recipeId, 'Generate images:', generateImagesFlag);
   
   if (!recipe) {
-    await updateProgress({ status: 'error', error: `Unknown recipe: ${recipeId}` });
     return { success: false, error: `Unknown recipe: ${recipeId}` };
   }
 
   // Get the active tab
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) {
-    await updateProgress({ status: 'error', error: 'No active tab' });
     return { success: false, error: 'No active tab' };
   }
 
   const pageTitle = tab.title || 'Remixed Page';
+  const tabId = tab.id;
   
   // Initialize progress
-  await updateProgress({ 
+  await updateRemixProgress(requestId, { 
+    requestId,
+    tabId,
     status: 'extracting', 
     step: 'Extracting page content...',
     startTime: Date.now(),
     pageTitle,
     recipeId,
-    error: undefined,
   });
 
   // Request content extraction from content script
   let content: string;
   try {
     console.log('[Focus Remix] Requesting content extraction...');
-    const extractResponse = await chrome.tabs.sendMessage(tab.id, { type: 'EXTRACT_CONTENT' });
+    const extractResponse = await chrome.tabs.sendMessage(tabId, { type: 'EXTRACT_CONTENT' });
     if (!extractResponse?.success || !extractResponse.content) {
       const error = extractResponse?.error || 'Failed to extract content';
-      await updateProgress({ status: 'error', error });
-      return { success: false, error };
+      await updateRemixProgress(requestId, { status: 'error', error });
+      scheduleCleanup(requestId);
+      return { success: false, error, requestId };
     }
     content = extractResponse.content;
     console.log('[Focus Remix] Content extracted, length:', content.length);
   } catch (error) {
     const errorMsg = `Content script error: ${error}`;
-    await updateProgress({ status: 'error', error: errorMsg });
-    return { success: false, error: errorMsg };
+    await updateRemixProgress(requestId, { status: 'error', error: errorMsg });
+    scheduleCleanup(requestId);
+    return { success: false, error: errorMsg, requestId };
   }
+
+  // Create AbortController for this request
+  const controller = new AbortController();
+  abortControllers.set(requestId, controller);
 
   // Call AI service to generate HTML with elapsed time updates
   const aiStartTime = Date.now();
-  await updateProgress({ status: 'analyzing', step: 'AI is generating HTML... (0s)' });
+  await updateRemixProgress(requestId, { status: 'analyzing', step: 'AI is generating HTML... (0s)' });
   
   // Update elapsed time every 5 seconds during AI call
   const elapsedInterval = setInterval(async () => {
     const elapsed = Math.round((Date.now() - aiStartTime) / 1000);
-    await updateProgress({ step: `AI is generating HTML... (${elapsed}s)` });
+    await updateRemixProgress(requestId, { step: `AI is generating HTML... (${elapsed}s)` });
   }, 5000);
+  elapsedIntervals.set(requestId, elapsedInterval);
   
   // Determine timeout and token limits based on recipe complexity
-  // Illustrated recipe needs more time/tokens for image prompts
   const isImageHeavyRecipe = generateImagesFlag || recipeId === 'illustrated';
-  const timeoutMs = isImageHeavyRecipe ? 300000 : 120000; // 5 min for images, 2 min otherwise
-  const maxTokens = isImageHeavyRecipe ? 48000 : 16384; // More tokens for image descriptions
+  const timeoutMs = isImageHeavyRecipe ? 300000 : 120000;
+  const maxTokens = isImageHeavyRecipe ? 48000 : 16384;
   
   console.log('[Focus Remix] Calling Azure OpenAI (timeout:', timeoutMs / 1000, 's, max tokens:', maxTokens, ')...');
   const aiResult = await analyzeWithAI({
@@ -269,17 +387,20 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
     includeImages: generateImagesFlag,
     timeoutMs,
     maxTokens,
+    abortSignal: controller.signal,
   });
   
   clearInterval(elapsedInterval);
+  elapsedIntervals.delete(requestId);
   
   const aiDuration = Math.round((Date.now() - aiStartTime) / 1000);
   console.log('[Focus Remix] AI response received in', aiDuration, 'seconds:', aiResult.success ? 'success' : 'failed', aiResult.error || '');
 
   if (!aiResult.success || !aiResult.data) {
     const error = aiResult.error || 'AI analysis failed';
-    await updateProgress({ status: 'error', error: `${error} (after ${aiDuration}s)` });
-    return { success: false, error };
+    await updateRemixProgress(requestId, { status: 'error', error: `${error} (after ${aiDuration}s)` });
+    scheduleCleanup(requestId);
+    return { success: false, error, requestId };
   }
 
   let finalHtml = aiResult.data.html;
@@ -289,7 +410,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
     if (!isImageConfigured()) {
       console.warn('[Focus Remix] Image generation requested but not configured');
     } else {
-      await updateProgress({ 
+      await updateRemixProgress(requestId, { 
         status: 'generating-images', 
         step: `Generating ${aiResult.data.images.length} images...` 
       });
@@ -309,7 +430,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
   }
 
   // Save to IndexedDB and open viewer
-  await updateProgress({ status: 'saving', step: 'Saving remixed page...' });
+  await updateRemixProgress(requestId, { status: 'saving', step: 'Saving remixed page...' });
   
   try {
     console.log('[Focus Remix] Saving to IndexedDB, HTML length:', finalHtml.length);
@@ -324,7 +445,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
       recipeId,
       recipeName,
       html: finalHtml,
-      originalContent: content, // Store for respin capability
+      originalContent: content,
     });
     
     console.log('[Focus Remix] Article saved:', savedArticle.id);
@@ -333,34 +454,41 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
     const viewerUrl = chrome.runtime.getURL(`src/viewer/viewer.html?id=${savedArticle.id}`);
     await chrome.tabs.create({ url: viewerUrl, active: true });
     
-    await updateProgress({ 
+    await updateRemixProgress(requestId, { 
       status: 'complete', 
       step: 'Done!',
-      explanation: aiResult.data.explanation,
       articleId: savedArticle.id,
     });
     
-    // Clear badge after a delay
-    setTimeout(() => {
-      chrome.action.setBadgeText({ text: '' });
-    }, 3000);
+    // Cleanup after delay
+    scheduleCleanup(requestId);
     
     return { 
       success: true, 
       aiExplanation: aiResult.data.explanation,
       articleId: savedArticle.id,
+      requestId,
     };
   } catch (error) {
     const errorMsg = `Failed to save article: ${error}`;
-    await updateProgress({ status: 'error', error: errorMsg });
-    return { success: false, error: errorMsg };
+    await updateRemixProgress(requestId, { status: 'error', error: errorMsg });
+    scheduleCleanup(requestId);
+    return { success: false, error: errorMsg, requestId };
   }
+}
+
+/**
+ * Schedule cleanup of a remix request after a delay
+ */
+function scheduleCleanup(requestId: string, delayMs = 10000) {
+  setTimeout(() => removeRemixRequest(requestId), delayMs);
 }
 
 /**
  * Respin an existing article with a new recipe
  */
 async function performRespin(message: RemixMessage): Promise<RemixResponse> {
+  const requestId = generateRequestId();
   const articleId = message.payload?.articleId;
   const recipeId = message.payload?.recipeId || 'focus';
   const generateImagesFlag = message.payload?.generateImages ?? false;
@@ -385,11 +513,17 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
     return { success: false, error: `Unknown recipe: ${recipeId}` };
   }
   
-  console.log('[Focus Remix] Respinning article:', articleId, 'with recipe:', recipeId);
+  console.log('[Focus Remix] Respinning article:', articleId, 'with recipe:', recipeId, 'request:', requestId);
+  
+  // Create AbortController for this request
+  const controller = new AbortController();
+  abortControllers.set(requestId, controller);
   
   // Update progress with elapsed time
   const aiStartTime = Date.now();
-  await updateProgress({ 
+  await updateRemixProgress(requestId, { 
+    requestId,
+    tabId: 0, // No source tab for respin
     status: 'analyzing', 
     step: 'AI is generating new design... (0s)',
     startTime: aiStartTime,
@@ -400,12 +534,13 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
   // Update elapsed time every 5 seconds
   const elapsedInterval = setInterval(async () => {
     const elapsed = Math.round((Date.now() - aiStartTime) / 1000);
-    await updateProgress({ step: `AI is generating new design... (${elapsed}s)` });
+    await updateRemixProgress(requestId, { step: `AI is generating new design... (${elapsed}s)` });
   }, 5000);
+  elapsedIntervals.set(requestId, elapsedInterval);
   
   // Determine timeout and token limits based on recipe complexity
   const isImageHeavyRecipe = generateImagesFlag || recipeId === 'illustrated';
-  const timeoutMs = isImageHeavyRecipe ? 300000 : 120000; // 5 min for images, 2 min otherwise
+  const timeoutMs = isImageHeavyRecipe ? 300000 : 120000;
   const maxTokens = isImageHeavyRecipe ? 48000 : 16384;
   
   // Call AI service
@@ -416,23 +551,26 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
     includeImages: generateImagesFlag,
     timeoutMs,
     maxTokens,
+    abortSignal: controller.signal,
   });
   
   clearInterval(elapsedInterval);
+  elapsedIntervals.delete(requestId);
   
   const aiDuration = Math.round((Date.now() - aiStartTime) / 1000);
   
   if (!aiResult.success || !aiResult.data) {
     const error = aiResult.error || 'AI analysis failed';
-    await updateProgress({ status: 'error', error: `${error} (after ${aiDuration}s)` });
-    return { success: false, error };
+    await updateRemixProgress(requestId, { status: 'error', error: `${error} (after ${aiDuration}s)` });
+    scheduleCleanup(requestId);
+    return { success: false, error, requestId };
   }
   
   let finalHtml = aiResult.data.html;
   
   // Generate images if requested
   if (generateImagesFlag && aiResult.data.images && aiResult.data.images.length > 0 && isImageConfigured()) {
-    await updateProgress({ 
+    await updateRemixProgress(requestId, { 
       status: 'generating-images', 
       step: `Generating ${aiResult.data.images.length} images...` 
     });
@@ -446,7 +584,7 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
   }
   
   // Save as new article
-  await updateProgress({ status: 'saving', step: 'Saving new version...' });
+  await updateRemixProgress(requestId, { status: 'saving', step: 'Saving new version...' });
   
   const recipeName = BUILT_IN_RECIPES.find(r => r.id === recipeId)?.name || recipeId;
   
@@ -459,21 +597,19 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
     originalContent: originalArticle.originalContent,
   });
   
-  await updateProgress({ 
+  await updateRemixProgress(requestId, { 
     status: 'complete', 
     step: 'Done!',
-    explanation: aiResult.data.explanation,
     articleId: newArticle.id,
   });
   
-  setTimeout(() => {
-    chrome.action.setBadgeText({ text: '' });
-  }, 3000);
+  scheduleCleanup(requestId);
   
   return { 
     success: true, 
     aiExplanation: aiResult.data.explanation,
     articleId: newArticle.id,
+    requestId,
   };
 }
 

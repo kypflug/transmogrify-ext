@@ -13,6 +13,7 @@ export interface AIRequestOptions {
   maxTokens?: number;
   includeImages?: boolean;
   timeoutMs?: number; // Timeout in milliseconds
+  abortSignal?: AbortSignal; // For cancellation support
 }
 
 export interface AIServiceResponse {
@@ -44,6 +45,7 @@ export async function analyzeWithAI(options: AIRequestOptions): Promise<AIServic
     maxTokens = 16384, 
     includeImages = false,
     timeoutMs = 120000, // 2 minute default timeout
+    abortSignal,
   } = options;
   
   const startTime = Date.now();
@@ -61,12 +63,21 @@ export async function analyzeWithAI(options: AIRequestOptions): Promise<AIServic
 
   const url = `${aiConfig.endpoint}/openai/deployments/${aiConfig.deployment}/chat/completions?api-version=${aiConfig.apiVersion}`;
 
-  // Create an AbortController for timeout
+  // Create an AbortController for timeout, or use provided signal
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
     console.error('[Focus Remix] Request timed out after', timeoutMs / 1000, 'seconds');
     controller.abort();
   }, timeoutMs);
+  
+  // If an external abort signal is provided, listen to it
+  if (abortSignal) {
+    abortSignal.addEventListener('abort', () => {
+      console.log('[Focus Remix] Request cancelled by user');
+      controller.abort();
+      clearTimeout(timeoutId);
+    });
+  }
 
   try {
     console.log('[Focus Remix] Sending request to Azure OpenAI...');

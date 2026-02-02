@@ -112,6 +112,103 @@ body {
   color: white;
 }
 
+/* Active Remixes Section */
+.active-remixes-section {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #f0f4ff;
+  border-radius: 8px;
+  border: 1px solid #d0d8ff;
+}
+
+.active-remixes-section h2 {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #667eea;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.active-count {
+  background: #667eea;
+  color: white;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 8px;
+}
+
+.active-remixes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.active-remix-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: white;
+  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+}
+
+.active-remix-icon {
+  font-size: 18px;
+  width: 28px;
+  text-align: center;
+}
+
+.active-remix-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.active-remix-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: #1a1a1a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.active-remix-status {
+  font-size: 11px;
+  color: #666;
+}
+
+.active-remix-cancel {
+  padding: 4px 8px;
+  font-size: 11px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background: white;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.active-remix-cancel:hover {
+  background: #f44336;
+  border-color: #f44336;
+  color: white;
+}
+
+.active-remix-item.complete {
+  background: #e8f5e9;
+  border-color: #c8e6c9;
+}
+
+.active-remix-item.error {
+  background: #ffebee;
+  border-color: #ffcdd2;
+}
+
 /* AI Badge */
 .ai-badge {
   display: flex;

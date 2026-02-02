@@ -21,6 +21,14 @@
           <span class="status-indicator" id="statusIndicator">Ready</span>
         </header>
 
+        <!-- Active Remixes Section -->
+        <section class="active-remixes-section" id="activeRemixesSection" style="display: none;">
+          <h2>Active Remixes <span class="active-count" id="activeCount"></span></h2>
+          <div class="active-remixes-list" id="activeRemixesList">
+            <!-- Populated by JS -->
+          </div>
+        </section>
+
         <section class="ai-badge">
           <span class="ai-icon">✨</span>
           <span>Powered by GPT-5.2</span>
@@ -70,20 +78,6 @@ Examples:
             <span class="btn-text">Remix → New Tab</span>
           </button>
         </footer>
-
-        <div class="loading-overlay" id="loadingOverlay" style="display: none;">
-          <div class="loading-spinner"></div>
-          <div class="loading-status">
-            <p id="loadingText" class="loading-text">Starting...</p>
-            <div class="progress-steps" id="progressSteps">
-              <div class="progress-step" id="step-extract">⏳ Extracting content</div>
-              <div class="progress-step" id="step-analyze">⏳ Generating HTML</div>
-              <div class="progress-step" id="step-images">⏳ Creating images</div>
-              <div class="progress-step" id="step-apply">⏳ Saving article</div>
-            </div>
-            <p id="errorText" class="error-text" style="display: none;"></p>
-          </div>
-        </div>
       </div>
 
       <!-- Saved Articles Tab -->

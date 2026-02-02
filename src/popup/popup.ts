@@ -2,28 +2,16 @@
  * Focus Remix - Popup Script
  * Handles the extension popup UI for AI-powered remixing
  * With tabbed interface for Remix and Saved Articles
+ * Supports parallel remix operations
  */
 
-import { RemixMessage } from '../shared/types';
+import { RemixMessage, RemixRequest } from '../shared/types';
 import { BUILT_IN_RECIPES } from '../shared/recipes';
 import { isAIConfigured, isImageConfigured } from '../shared/config';
 import { ArticleSummary } from '../shared/storage-service';
 
-// Progress state type (matches service worker)
-interface RemixProgress {
-  status: 'idle' | 'extracting' | 'analyzing' | 'generating-images' | 'saving' | 'complete' | 'error';
-  step: string;
-  error?: string;
-  startTime?: number;
-  pageTitle?: string;
-  recipeId?: string;
-  explanation?: string;
-  articleId?: string;
-}
-
 // State
 let selectedRecipeId = 'focus';
-let isProcessing = false;
 
 // DOM Elements - Tabs
 const tabNav = document.querySelector('.tab-nav')!;
@@ -34,6 +22,11 @@ const articlesList = document.getElementById('articlesList')!;
 const emptyState = document.getElementById('emptyState')!;
 const storageInfo = document.getElementById('storageInfo')!;
 
+// DOM Elements - Active Remixes
+const activeRemixesSection = document.getElementById('activeRemixesSection')!;
+const activeRemixesList = document.getElementById('activeRemixesList')!;
+const activeCountEl = document.getElementById('activeCount')!;
+
 // DOM Elements - Remix
 const elements = {
   statusIndicator: document.getElementById('statusIndicator')!,
@@ -43,16 +36,8 @@ const elements = {
   explanationSection: document.getElementById('explanationSection')!,
   explanationText: document.getElementById('explanationText')!,
   remixBtn: document.getElementById('remixBtn')!,
-  loadingOverlay: document.getElementById('loadingOverlay')!,
-  loadingText: document.getElementById('loadingText')!,
-  errorText: document.getElementById('errorText')!,
   generateImages: document.getElementById('generateImages') as HTMLInputElement,
   imageToggleSection: document.querySelector('.image-toggle-section') as HTMLElement,
-  // Progress steps
-  stepExtract: document.getElementById('step-extract')!,
-  stepAnalyze: document.getElementById('step-analyze')!,
-  stepImages: document.getElementById('step-images')!,
-  stepApply: document.getElementById('step-apply')!,
 };
 
 /**
@@ -79,8 +64,11 @@ async function init() {
   // Load article count for badge
   await loadArticleCount();
   
-  // Check for ongoing operations (resilience feature)
-  await checkExistingProgress();
+  // Load active remixes
+  await loadActiveRemixes();
+  
+  // Start polling for updates
+  startPolling();
 }
 
 /**
@@ -166,6 +154,91 @@ async function loadSavedArticles() {
 }
 
 /**
+ * Load and display active remixes
+ */
+async function loadActiveRemixes() {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'GET_ACTIVE_REMIXES' });
+    if (!response?.success) return;
+    
+    const remixes: RemixRequest[] = response.activeRemixes || [];
+    
+    // Filter out idle remixes
+    const activeRemixes = remixes.filter(r => r.status !== 'idle');
+    
+    if (activeRemixes.length === 0) {
+      activeRemixesSection.style.display = 'none';
+      return;
+    }
+    
+    activeRemixesSection.style.display = 'block';
+    activeCountEl.textContent = String(activeRemixes.length);
+    
+    activeRemixesList.innerHTML = activeRemixes.map((remix) => {
+      const statusIcon = getStatusIcon(remix.status);
+      const elapsed = Math.round((Date.now() - remix.startTime) / 1000);
+      const elapsedStr = elapsed > 0 ? ` (${elapsed}s)` : '';
+      const statusClass = remix.status === 'complete' ? 'complete' : remix.status === 'error' ? 'error' : '';
+      const showCancel = !['complete', 'error'].includes(remix.status);
+      
+      return `
+        <div class="active-remix-item ${statusClass}" data-request-id="${remix.requestId}">
+          <div class="active-remix-icon">${statusIcon}</div>
+          <div class="active-remix-info">
+            <div class="active-remix-title">${escapeHtml(remix.pageTitle)}</div>
+            <div class="active-remix-status">${remix.step}${elapsedStr}</div>
+          </div>
+          ${showCancel ? `<button class="active-remix-cancel" data-action="cancel">Cancel</button>` : ''}
+        </div>
+      `;
+    }).join('');
+    
+  } catch (e) {
+    console.error('[Popup] Error loading active remixes:', e);
+  }
+}
+
+/**
+ * Get status icon for a remix status
+ */
+function getStatusIcon(status: string): string {
+  const icons: Record<string, string> = {
+    'extracting': '📄',
+    'analyzing': '🤖',
+    'generating-images': '🎨',
+    'saving': '💾',
+    'complete': '✓',
+    'error': '✗',
+  };
+  return icons[status] || '⏳';
+}
+
+/**
+ * Start polling for active remix updates
+ */
+function startPolling() {
+  // Poll every 2 seconds for updates
+  setInterval(async () => {
+    await loadActiveRemixes();
+  }, 2000);
+}
+
+/**
+ * Handle cancel button click
+ */
+async function cancelRemix(requestId: string) {
+  try {
+    await chrome.runtime.sendMessage({ 
+      type: 'CANCEL_REMIX', 
+      payload: { requestId } 
+    });
+    await loadActiveRemixes();
+  } catch (e) {
+    console.error('[Popup] Failed to cancel remix:', e);
+  }
+}
+
+/**
  * Handle article actions (click, favorite, export, delete)
  */
 async function handleArticleAction(articleId: string, action: string) {
@@ -238,109 +311,6 @@ function switchTab(tab: string) {
 }
 
 /**
- * Check if there's an ongoing operation and reconnect to it
- */
-async function checkExistingProgress() {
-  try {
-    const response = await chrome.runtime.sendMessage({ type: 'GET_PROGRESS' });
-    if (response?.success && response.progress) {
-      const progress: RemixProgress = response.progress;
-      
-      // If there's an active operation, show it
-      if (progress.status !== 'idle') {
-        displayProgress(progress);
-      }
-    }
-  } catch (e) {
-    console.log('[Popup] No existing progress');
-  }
-}
-
-/**
- * Display progress state from storage
- */
-function displayProgress(progress: RemixProgress) {
-  if (progress.status === 'idle') {
-    elements.loadingOverlay.style.display = 'none';
-    elements.remixBtn.removeAttribute('disabled');
-    return;
-  }
-  
-  // Show we're processing
-  isProcessing = true;
-  elements.loadingOverlay.style.display = 'flex';
-  elements.remixBtn.setAttribute('disabled', 'true');
-  elements.loadingText.textContent = progress.step || 'Processing...';
-  elements.errorText.style.display = 'none';
-  
-  // Reset all steps first
-  [elements.stepExtract, elements.stepAnalyze, elements.stepImages, elements.stepApply].forEach(el => {
-    el.classList.remove('active', 'done', 'error');
-  });
-  
-  // Update step indicators based on status
-  switch (progress.status) {
-    case 'extracting':
-      setStepStatus(elements.stepExtract, 'active');
-      break;
-    case 'analyzing':
-      setStepStatus(elements.stepExtract, 'done');
-      setStepStatus(elements.stepAnalyze, 'active');
-      break;
-    case 'generating-images':
-      setStepStatus(elements.stepExtract, 'done');
-      setStepStatus(elements.stepAnalyze, 'done');
-      setStepStatus(elements.stepImages, 'active');
-      elements.stepImages.classList.remove('hidden');
-      break;
-    case 'saving':
-      setStepStatus(elements.stepExtract, 'done');
-      setStepStatus(elements.stepAnalyze, 'done');
-      setStepStatus(elements.stepApply, 'active');
-      break;
-    case 'complete':
-      setStepStatus(elements.stepExtract, 'done');
-      setStepStatus(elements.stepAnalyze, 'done');
-      setStepStatus(elements.stepApply, 'done');
-      elements.loadingText.textContent = 'Done! Article saved.';
-      
-      // Show explanation if available
-      if (progress.explanation) {
-        elements.explanationText.textContent = progress.explanation;
-        elements.explanationSection.style.display = 'block';
-      }
-      
-      elements.statusIndicator.textContent = 'Saved';
-      elements.statusIndicator.classList.remove('error');
-      elements.statusIndicator.classList.add('success');
-      
-      // Allow starting a new operation
-      setTimeout(async () => {
-        elements.loadingOverlay.style.display = 'none';
-        elements.remixBtn.removeAttribute('disabled');
-        isProcessing = false;
-        await loadArticleCount(); // Update badge
-        chrome.runtime.sendMessage({ type: 'RESET_PROGRESS' });
-      }, 2000);
-      break;
-    case 'error':
-      if (progress.error) {
-        elements.errorText.textContent = progress.error;
-        elements.errorText.style.display = 'block';
-      }
-      elements.loadingText.textContent = 'Error occurred';
-      
-      setTimeout(() => {
-        elements.loadingOverlay.style.display = 'none';
-        elements.remixBtn.removeAttribute('disabled');
-        isProcessing = false;
-        chrome.runtime.sendMessage({ type: 'RESET_PROGRESS' });
-      }, 5000);
-      break;
-  }
-}
-
-/**
  * Render recipe selection buttons
  */
 function renderRecipes() {
@@ -392,10 +362,24 @@ function setupEventListeners() {
     }
   });
   
+  // Active remixes list - cancel button
+  activeRemixesList.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+    const cancelBtn = target.closest('.active-remix-cancel') as HTMLElement;
+    if (cancelBtn) {
+      const remixItem = cancelBtn.closest('.active-remix-item') as HTMLElement;
+      if (remixItem?.dataset.requestId) {
+        cancelRemix(remixItem.dataset.requestId);
+      }
+    }
+  });
+  
   // Listen for progress updates from service worker
   chrome.runtime.onMessage.addListener((message) => {
-    if (message.type === 'PROGRESS_UPDATE' && message.progress) {
-      displayProgress(message.progress);
+    if (message.type === 'PROGRESS_UPDATE') {
+      // Refresh active remixes display
+      loadActiveRemixes();
+      loadArticleCount();
     }
   });
 }
@@ -414,54 +398,13 @@ function selectRecipe(recipeId: string) {
   // Show/hide custom prompt
   elements.customPromptSection.style.display = recipeId === 'custom' ? 'block' : 'none';
 }
-
-/**
- * Reset progress UI
- */
-function resetProgress() {
-  [elements.stepExtract, elements.stepAnalyze, elements.stepImages, elements.stepApply].forEach(el => {
-    el.classList.remove('active', 'done', 'error');
-    el.textContent = el.textContent?.replace(/^[✓✗⏳] /, '⏳ ') || '';
-  });
-  elements.errorText.style.display = 'none';
-  elements.errorText.textContent = '';
-  elements.explanationSection.style.display = 'none';
-}
-
-/**
- * Update a progress step
- */
-function setStepStatus(step: HTMLElement, status: 'active' | 'done' | 'error', label?: string) {
-  step.classList.remove('active', 'done', 'error');
-  step.classList.add(status);
-  
-  const icons: Record<string, string> = { active: '⏳', done: '✓', error: '✗' };
-  const baseLabel = label || step.textContent?.replace(/^[✓✗⏳] /, '') || '';
-  step.textContent = `${icons[status]} ${baseLabel}`;
-}
-
 /**
  * Apply AI remix to the page
  */
 async function applyRemix() {
-  if (isProcessing) return;
-  
   const generateImages = elements.generateImages?.checked ?? false;
   
-  // Show loading and reset progress
-  elements.loadingOverlay.style.display = 'flex';
-  elements.remixBtn.setAttribute('disabled', 'true');
-  isProcessing = true;
-  resetProgress();
-  
-  // Hide images step if not generating
-  elements.stepImages.classList.toggle('hidden', !generateImages);
-  
-  elements.loadingText.textContent = 'Starting remix...';
-  
   try {
-    setStepStatus(elements.stepExtract, 'active');
-    
     const message: RemixMessage = {
       type: 'AI_ANALYZE',
       payload: {
@@ -471,11 +414,13 @@ async function applyRemix() {
       },
     };
     
-    // Send message - service worker will update progress via storage
+    // Send message - service worker will track progress independently
     const response = await chrome.runtime.sendMessage(message);
     
     if (response?.success) {
-      setStepStatus(elements.stepApply, 'done');
+      // Refresh the active remixes list
+      await loadActiveRemixes();
+      await loadArticleCount();
       
       // Show explanation if available
       if (response.aiExplanation) {
@@ -483,36 +428,21 @@ async function applyRemix() {
         elements.explanationSection.style.display = 'block';
       }
       
-      elements.loadingText.textContent = 'Article saved!';
+      elements.statusIndicator.textContent = 'Saved';
+      elements.statusIndicator.classList.remove('error');
+      elements.statusIndicator.classList.add('success');
       
-      // Update article count
-      await loadArticleCount();
-      
-      // Brief delay to show completion before hiding
-      await new Promise(r => setTimeout(r, 1500));
-    } else {
-      throw new Error(response?.error || 'Failed to apply remix');
+      // Reset status after a delay
+      setTimeout(() => {
+        elements.statusIndicator.textContent = 'Ready';
+        elements.statusIndicator.classList.remove('success');
+      }, 3000);
+    } else if (response?.error) {
+      showError(response.error);
     }
   } catch (error) {
     const errorMsg = String(error).replace('Error: ', '');
-    elements.errorText.textContent = errorMsg;
-    elements.errorText.style.display = 'block';
-    
-    // Mark current active step as error
-    [elements.stepExtract, elements.stepAnalyze, elements.stepImages, elements.stepApply].forEach(el => {
-      if (el.classList.contains('active')) {
-        setStepStatus(el, 'error');
-      }
-    });
-    
     showError(errorMsg);
-    
-    // Don't hide overlay immediately on error so user can see what failed
-    await new Promise(r => setTimeout(r, 3000));
-  } finally {
-    elements.loadingOverlay.style.display = 'none';
-    elements.remixBtn.removeAttribute('disabled');
-    isProcessing = false;
   }
 }
 
@@ -524,6 +454,12 @@ function showError(message: string) {
   elements.statusIndicator.classList.add('error');
   elements.explanationText.textContent = `Error: ${message}`;
   elements.explanationSection.style.display = 'block';
+  
+  // Reset after delay
+  setTimeout(() => {
+    elements.statusIndicator.textContent = 'Ready';
+    elements.statusIndicator.classList.remove('error');
+  }, 5000);
 }
 
 // Initialize when DOM is ready
