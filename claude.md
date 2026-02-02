@@ -100,7 +100,7 @@ When the user enables "Generate AI Images", the system:
 1. Passes `includeImages: true` to the AI service
 2. AI returns `imagePlaceholders` array with prompts and positions
 3. Service worker calls `generateImages()` from `image-service.ts`
-4. Images are generated via gpt-image-1 and returned as base64 data URLs
+4. Images are generated via gpt-image-1.5 and returned as base64 data URLs
 5. `AIRemixer.insertImages()` places them in the DOM at specified positions
 
 ### Image Positions
@@ -109,6 +109,11 @@ When the user enables "Generate AI Images", the system:
 - `prepend` - Insert as first child of target element
 - `append` - Insert as last child of target element
 - `replace-background` - Set as CSS background-image of target
+
+### Supported Image Sizes
+- `1024x1024` - Square (default)
+- `1024x1536` - Portrait
+- `1536x1024` - Landscape
 
 ## DOM Extraction
 
@@ -134,15 +139,19 @@ Create `.env` with:
 # GPT-5.2 for DOM analysis
 VITE_AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
 VITE_AZURE_OPENAI_API_KEY=your-key
-VITE_AZURE_OPENAI_DEPLOYMENT=gpt-52
+VITE_AZURE_OPENAI_DEPLOYMENT=gpt-5.2
 VITE_AZURE_OPENAI_API_VERSION=2024-10-21
 
-# (Optional) gpt-image-1 for AI image generation
+# (Optional) gpt-image-1.5 for AI image generation
 VITE_AZURE_IMAGE_ENDPOINT=https://your-image-resource.openai.azure.com
 VITE_AZURE_IMAGE_API_KEY=your-image-key
-VITE_AZURE_IMAGE_DEPLOYMENT=gpt-image-1
+VITE_AZURE_IMAGE_DEPLOYMENT=gpt-image-1.5
 VITE_AZURE_IMAGE_API_VERSION=2024-10-21
 ```
+
+## API Notes
+- GPT-5.2 uses `max_completion_tokens` instead of `max_tokens`
+- gpt-image-1.5 supports sizes: 1024x1024, 1024x1536, 1536x1024
 
 ## Security Notes
 - API key is embedded at build time (extension-only use)

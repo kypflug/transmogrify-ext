@@ -39,7 +39,21 @@ export interface ReaderSettings {
 
 /** Message types for extension communication */
 export interface RemixMessage {
-  type: 'APPLY_REMIX' | 'REMOVE_REMIX' | 'GET_STATUS' | 'UPDATE_SETTINGS' | 'AI_ANALYZE';
+  type: 
+    | 'EXTRACT_CONTENT' 
+    | 'GET_STATUS' 
+    | 'UPDATE_SETTINGS' 
+    | 'AI_ANALYZE' 
+    | 'GET_PROGRESS' 
+    | 'RESET_PROGRESS'
+    | 'GET_ARTICLES'
+    | 'GET_ARTICLE'
+    | 'DELETE_ARTICLE'
+    | 'TOGGLE_FAVORITE'
+    | 'EXPORT_ARTICLE'
+    | 'GET_STORAGE_STATS'
+    | 'OPEN_ARTICLE'
+    | 'RESPIN_ARTICLE';
   payload?: RemixPayload;
 }
 
@@ -59,6 +73,7 @@ export interface RemixPayload {
   generatedImages?: GeneratedImageData[];
   generateImages?: boolean;
   settings?: Partial<UserPreferences>;
+  articleId?: string; // For article operations
 }
 
 /** Response from content script */
@@ -68,6 +83,25 @@ export interface RemixResponse {
   error?: string;
   aiExplanation?: string;
   domContent?: string;
+  filePath?: string;
+  progress?: RemixProgressState;
+  articleId?: string;
+  articles?: import('./storage-service').ArticleSummary[];
+  article?: import('./storage-service').SavedArticle;
+  isFavorite?: boolean;
+  stats?: { count: number; totalSize: number };
+}
+
+/** Progress state for resilient operations */
+export interface RemixProgressState {
+  status: 'idle' | 'extracting' | 'analyzing' | 'generating-images' | 'saving' | 'complete' | 'error';
+  step: string;
+  error?: string;
+  startTime?: number;
+  pageTitle?: string;
+  recipeId?: string;
+  explanation?: string;
+  articleId?: string;
 }
 
 /** Default preferences */

@@ -1,11 +1,11 @@
 # Focus Remix
 
-An AI-powered Microsoft Edge extension that "remixes" web pages using GPT-5.2 to intelligently transform layouts for better focus and readability. Now with AI image generation powered by gpt-image-1!
+An AI-powered Microsoft Edge extension that "remixes" web pages using GPT-5.2 to intelligently transform layouts for better focus and readability. Now with AI image generation powered by gpt-image-1.5!
 
 ## Features
 
 - **AI-Powered Analysis**: Uses Azure OpenAI GPT-5.2 to analyze page structure and decide what to hide/modify
-- **AI Image Generation**: Optional gpt-image-1 integration generates diagrams, illustrations, and backgrounds
+- **AI Image Generation**: Optional gpt-image-1.5 integration generates diagrams, illustrations, and backgrounds
 - **Built-in Recipes**: Focus, Reader, Declutter, Zen, Research, Illustrated, Visualize, Aesthetic modes
 - **Custom Prompts**: Write your own instructions for the AI
 - **Smart DOM Extraction**: Sends a compact page representation to stay within token limits
@@ -23,14 +23,14 @@ An AI-powered Microsoft Edge extension that "remixes" web pages using GPT-5.2 to
 ```
 VITE_AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
 VITE_AZURE_OPENAI_API_KEY=your-key
-VITE_AZURE_OPENAI_DEPLOYMENT=gpt-52
+VITE_AZURE_OPENAI_DEPLOYMENT=gpt-5.2
 ```
 
 3. (Optional) Add image generation credentials:
 ```
 VITE_AZURE_IMAGE_ENDPOINT=https://your-image-resource.openai.azure.com
 VITE_AZURE_IMAGE_API_KEY=your-image-key
-VITE_AZURE_IMAGE_DEPLOYMENT=gpt-image-1
+VITE_AZURE_IMAGE_DEPLOYMENT=gpt-image-1.5
 ```
 
 ### Build

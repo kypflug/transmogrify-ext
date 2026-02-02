@@ -8,67 +8,100 @@
   </head>
   <body>
     <div class="popup-container">
-      <header class="popup-header">
-        <h1>🎯 Focus Remix</h1>
-        <span class="status-indicator" id="statusIndicator">Ready</span>
-      </header>
+      <!-- Tab Navigation -->
+      <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="remix">✨ Remix</button>
+        <button class="tab-btn" data-tab="saved">📚 Saved <span class="article-count" id="articleCount"></span></button>
+      </nav>
 
-      <section class="ai-badge">
-        <span class="ai-icon">✨</span>
-        <span>Powered by GPT-5.2</span>
-      </section>
+      <!-- Remix Tab -->
+      <div class="tab-content active" id="remixTab">
+        <header class="popup-header">
+          <h1>🎯 Focus Remix</h1>
+          <span class="status-indicator" id="statusIndicator">Ready</span>
+        </header>
 
-      <section class="recipe-selector">
-        <h2>Choose a Recipe</h2>
-        <div class="recipe-grid" id="recipeGrid">
-          <!-- Recipes populated by JS -->
-        </div>
-      </section>
+        <section class="ai-badge">
+          <span class="ai-icon">✨</span>
+          <span>Powered by GPT-5.2</span>
+        </section>
 
-      <section class="image-toggle-section" id="imageToggleSection">
-        <label class="image-toggle">
-          <input type="checkbox" id="generateImages" />
-          <span class="toggle-slider"></span>
-          <span class="toggle-label">
-            <span class="toggle-icon">🎨</span>
-            Generate AI Images
-          </span>
-        </label>
-        <p class="toggle-hint" id="imageHint">Add diagrams, illustrations, or backgrounds</p>
-      </section>
+        <section class="recipe-selector">
+          <h2>Choose a Recipe</h2>
+          <div class="recipe-grid" id="recipeGrid">
+            <!-- Recipes populated by JS -->
+          </div>
+        </section>
 
-      <section class="custom-prompt-section" id="customPromptSection" style="display: none;">
-        <h2>Custom Instructions</h2>
-        <textarea 
-          id="customPrompt" 
-          placeholder="Tell the AI how you want this page transformed...
+        <section class="image-toggle-section" id="imageToggleSection">
+          <label class="image-toggle">
+            <input type="checkbox" id="generateImages" />
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">
+              <span class="toggle-icon">🎨</span>
+              Generate AI Images
+            </span>
+          </label>
+          <p class="toggle-hint" id="imageHint">Add diagrams, illustrations, or backgrounds</p>
+        </section>
+
+        <section class="custom-prompt-section" id="customPromptSection" style="display: none;">
+          <h2>Custom Instructions</h2>
+          <textarea 
+            id="customPrompt" 
+            placeholder="Tell the AI how you want this page transformed...
 
 Examples:
 • Hide all images and focus on text
 • Remove everything except the main article and code blocks
 • Make it look like a minimal documentation page
 • Add a hero image that captures the article theme"
-        ></textarea>
-      </section>
+          ></textarea>
+        </section>
 
-      <section class="explanation-section" id="explanationSection" style="display: none;">
-        <h2>AI Explanation</h2>
-        <p id="explanationText"></p>
-      </section>
+        <section class="explanation-section" id="explanationSection" style="display: none;">
+          <h2>AI Explanation</h2>
+          <p id="explanationText"></p>
+        </section>
 
-      <footer class="popup-footer">
-        <button id="remixBtn" class="primary-btn">
-          <span class="btn-icon">✨</span>
-          <span class="btn-text">Remix This Page</span>
-        </button>
-        <button id="removeBtn" class="secondary-btn" style="display: none;">
-          Remove Remix
-        </button>
-      </footer>
+        <footer class="popup-footer">
+          <button id="remixBtn" class="primary-btn">
+            <span class="btn-icon">✨</span>
+            <span class="btn-text">Remix → New Tab</span>
+          </button>
+        </footer>
 
-      <div class="loading-overlay" id="loadingOverlay" style="display: none;">
-        <div class="loading-spinner"></div>
-        <p id="loadingText">AI is analyzing the page...</p>
+        <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+          <div class="loading-spinner"></div>
+          <div class="loading-status">
+            <p id="loadingText" class="loading-text">Starting...</p>
+            <div class="progress-steps" id="progressSteps">
+              <div class="progress-step" id="step-extract">⏳ Extracting content</div>
+              <div class="progress-step" id="step-analyze">⏳ Generating HTML</div>
+              <div class="progress-step" id="step-images">⏳ Creating images</div>
+              <div class="progress-step" id="step-apply">⏳ Saving article</div>
+            </div>
+            <p id="errorText" class="error-text" style="display: none;"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Saved Articles Tab -->
+      <div class="tab-content" id="savedTab">
+        <header class="saved-header">
+          <h2>📚 Saved Articles</h2>
+          <span class="storage-info" id="storageInfo"></span>
+        </header>
+        
+        <div class="articles-list" id="articlesList">
+          <!-- Populated by JS -->
+        </div>
+        
+        <div class="empty-state" id="emptyState" style="display: none;">
+          <div class="empty-icon">📄</div>
+          <p>No saved articles yet</p>
+          <p class="empty-hint">Use the Remix tab to transform pages</p>
+        </div>
       </div>
     </div>
 

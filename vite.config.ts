@@ -11,6 +11,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         popup: 'src/popup/popup.html',
+        viewer: 'src/viewer/viewer.html',
       },
     },
   },

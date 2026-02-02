@@ -1,6 +1,6 @@
 /**
- * Recipe System
- * Built-in and custom prompts for AI-powered DOM remixing
+ * Recipe System v2
+ * Generates complete HTML documents instead of DOM mutations
  */
 
 export interface Recipe {
@@ -14,256 +14,390 @@ export interface Recipe {
 }
 
 export interface ImagePlaceholder {
-  /** Unique ID for this image placeholder */
   id: string;
-  /** CSS selector where image should be inserted */
-  insertAt: string;
-  /** Position relative to insertAt element */
-  position: 'before' | 'after' | 'prepend' | 'append' | 'replace-background';
-  /** Detailed prompt for image generation */
   prompt: string;
-  /** Image dimensions */
-  size?: '1024x1024' | '1024x1792' | '1792x1024';
-  /** Style hint */
+  size?: '1024x1024' | '1024x1536' | '1536x1024';
   style?: 'natural' | 'vivid';
-  /** Alt text for accessibility */
   altText: string;
-  /** Optional CSS classes to apply */
-  cssClasses?: string;
+  placement: 'hero' | 'inline' | 'background' | 'accent';
 }
 
 export interface AIResponse {
-  /** CSS selectors to hide completely */
-  hide?: string[];
-  /** CSS selector for the main content to preserve/highlight */
-  mainContent?: string;
-  /** Custom CSS to inject */
-  customCSS?: string;
-  /** Elements to modify with specific styles */
-  modify?: Array<{
-    selector: string;
-    styles: Record<string, string>;
-  }>;
-  /** Image placeholders to generate and insert */
+  /** Complete HTML document to render */
+  html: string;
+  /** Image placeholders for AI generation */
   images?: ImagePlaceholder[];
-  /** Explanation of what the AI decided to do */
+  /** Brief explanation of design choices */
   explanation?: string;
 }
 
+const SAVE_BUTTON_SCRIPT = `
+<!-- Focus Remix Save Button -->
+<style>
+  .remix-save-fab {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    transition: all 0.2s ease;
+    z-index: 99999;
+  }
+  .remix-save-fab:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+  }
+  .remix-save-fab:active {
+    transform: scale(0.95);
+  }
+  .remix-save-fab.saved {
+    background: #4CAF50;
+  }
+  .remix-save-tooltip {
+    position: absolute;
+    right: 64px;
+    background: #333;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  .remix-save-fab:hover .remix-save-tooltip {
+    opacity: 1;
+  }
+</style>
+<button class="remix-save-fab" id="remixSaveFab" title="Save to file">
+  <span class="remix-save-tooltip">Save to file</span>
+  💾
+</button>
+<script>
+  document.getElementById('remixSaveFab').addEventListener('click', function() {
+    // Send message to parent (viewer page) to trigger export
+    if (window.parent !== window) {
+      window.parent.postMessage({ type: 'FOCUS_REMIX_SAVE' }, '*');
+      this.innerHTML = '✓';
+      this.classList.add('saved');
+      setTimeout(() => {
+        this.innerHTML = '💾';
+        this.classList.remove('saved');
+      }, 2000);
+    } else {
+      // Fallback: download directly
+      const html = document.documentElement.outerHTML;
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'remixed-page.html';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  });
+</script>
+`;
+
 const RESPONSE_FORMAT = `
-Respond with a JSON object containing these optional fields:
+You MUST respond with a JSON object containing these fields:
 {
-  "hide": ["selector1", "selector2"],  // CSS selectors for elements to hide
-  "mainContent": "selector",            // CSS selector for the main content
-  "customCSS": "css rules",             // Additional CSS to inject
-  "modify": [                           // Elements to modify
-    { "selector": "sel", "styles": { "property": "value" } }
-  ],
-  "explanation": "Brief explanation of changes"
+  "html": "<!DOCTYPE html>...(complete HTML document)...",
+  "explanation": "Brief explanation of your design choices"
 }
 
-IMPORTANT:
-- Use precise CSS selectors that will match elements on this page
-- Prefer ID selectors (#id) when available
-- Use class selectors (.class) or tag[attribute] patterns
-- For hiding, target containers rather than individual items
-- Ensure mainContent selector captures the primary article/content
+HTML REQUIREMENTS:
+- Output a COMPLETE, valid HTML5 document with <!DOCTYPE html>, <html>, <head>, and <body>
+- Include all CSS inline in a <style> tag in <head>
+- Use semantic HTML5 elements (article, section, header, main, figure, etc.)
+- Make it fully responsive with mobile-first CSS
+- Use modern CSS (flexbox, grid, custom properties, clamp())
+- Include a viewport meta tag
+- Preserve ALL content from the source - don't summarize or truncate
+- Convert markdown-style links [text](url) to proper <a> tags
+- For images, use the provided src URLs directly
+
+CSS BEST PRACTICES:
+- Use CSS custom properties for colors and spacing
+- Use clamp() for fluid typography
+- Mobile-first responsive design
+- Smooth transitions where appropriate
+- System font stack for performance
+- Minimal layout shift
+- For gradient backgrounds on body/html: ALWAYS include background-repeat: no-repeat; background-attachment: fixed; min-height: 100vh;
+
+ACCESSIBILITY:
+- Proper heading hierarchy
+- Alt text for images
+- Good color contrast
+- Focus states for interactive elements
+
+SAVE BUTTON: Include this exact HTML at the end of <body> for the save functionality:
+${SAVE_BUTTON_SCRIPT}
+
+CRITICAL: Output the full HTML as a single string in the "html" field. Escape quotes within the HTML using \\" and newlines using \\n.
 `;
 
 const RESPONSE_FORMAT_WITH_IMAGES = `
-Respond with a JSON object containing these fields:
+You MUST respond with a JSON object containing these fields:
 {
-  "hide": ["selector1", "selector2"],  // CSS selectors for elements to hide
-  "mainContent": "selector",            // CSS selector for the main content
-  "customCSS": "css rules",             // Additional CSS to inject
-  "modify": [                           // Elements to modify
-    { "selector": "sel", "styles": { "property": "value" } }
-  ],
-  "images": [                           // Images to generate and insert
+  "html": "<!DOCTYPE html>...(complete HTML document)...",
+  "images": [
     {
-      "id": "hero-image",               // Unique identifier
-      "insertAt": "#main-content",      // CSS selector for insertion point
-      "position": "prepend",            // before|after|prepend|append|replace-background
-      "prompt": "Detailed image generation prompt describing the visual...",
-      "size": "1792x1024",              // 1024x1024, 1024x1792, or 1792x1024
-      "style": "natural",               // natural or vivid
-      "altText": "Description for accessibility",
-      "cssClasses": "hero-img rounded"  // Optional CSS classes
+      "id": "unique-id",
+      "prompt": "Detailed image generation prompt...",
+      "size": "1536x1024",
+      "style": "natural",
+      "altText": "Accessible description",
+      "placement": "hero"
     }
   ],
-  "explanation": "Brief explanation of changes"
+  "explanation": "Brief explanation of your design choices"
 }
 
-IMAGE GUIDELINES:
-- Generate images that complement and enhance the page content
-- Use specific, detailed prompts describing style, colors, mood, and subject
-- Consider the page's topic and tone when designing images
-- For diagrams, describe the visual structure clearly
-- For backgrounds, use subtle, non-distracting imagery
-- Match the visual style to the content (technical = clean diagrams, articles = relevant imagery)
-- Limit to 1-3 images maximum to keep load times reasonable
+HTML REQUIREMENTS:
+- Output a COMPLETE, valid HTML5 document
+- Include all CSS inline in a <style> tag
+- Use semantic HTML5 elements
+- Make it fully responsive with mobile-first CSS
+- Use modern CSS (flexbox, grid, custom properties, clamp())
+- Preserve ALL content from the source
+- For AI-generated images, use placeholder: <img src="{{IMAGE_ID}}" alt="...">
+- For original images from the source, keep their original URLs
 
-IMPORTANT:
-- Use precise CSS selectors that will match elements on this page
-- Prefer ID selectors (#id) when available
-- Ensure mainContent selector captures the primary article/content
+IMAGE PLACEHOLDERS:
+- Use {{image-id}} syntax in img src for AI-generated images
+- Match the "id" field in the images array
+- placement options: "hero" (top banner), "inline" (within content), "background" (section bg), "accent" (decorative)
+- Write detailed, evocative prompts for the AI image generator
+- Include as many images as would genuinely enhance the content - the more helpful illustrations the better!
+- For long articles, consider 5-10+ images at natural breakpoints
+
+CSS BEST PRACTICES:
+- Use CSS custom properties for colors and spacing  
+- Use clamp() for fluid typography
+- Mobile-first responsive design
+- Include image loading states
+- Optimize for Core Web Vitals
+- For gradient backgrounds on body/html: ALWAYS include background-repeat: no-repeat; background-attachment: fixed; min-height: 100vh;
+
+SAVE BUTTON: Include this exact HTML at the end of <body> for the save functionality:
+${SAVE_BUTTON_SCRIPT}
+
+CRITICAL: Output the full HTML as a single string in the "html" field. Escape quotes using \\" and newlines using \\n.
 `;
 
 export const BUILT_IN_RECIPES: Recipe[] = [
   {
     id: 'focus',
     name: 'Focus Mode',
-    description: 'Hide distractions, emphasize main content',
+    description: 'Clean, distraction-free reading',
     icon: '◎',
     supportsImages: false,
-    systemPrompt: `You are a web page analyzer that helps users focus on content. Your job is to identify:
-1. The main content area (article, post, documentation)
-2. Distracting elements (ads, sidebars, popups, promotional banners, related content, social widgets)
-3. Navigation that could be hidden without losing context
+    systemPrompt: `You are an expert web designer creating a beautiful, focused reading experience.
 
-Be aggressive about hiding distractions but careful to preserve the core content.
+Given content extracted from a webpage, generate a COMPLETE HTML document that:
+- Presents the content in a clean, distraction-free layout
+- Uses a centered, readable column width (max 65-70ch)
+- Has generous whitespace and comfortable line-height (1.6-1.7)
+- Uses a refined typographic scale
+- Is fully responsive
+- Loads fast with minimal CSS
+
+Design style: Minimalist, calm, focused. Think Medium.com or iA Writer.
 ${RESPONSE_FORMAT}`,
-    userPromptTemplate: `Analyze this page and identify what to hide for a focused reading experience:
+    userPromptTemplate: `Transform this content into a beautiful, focused reading experience:
 
-{DOM}
+{CONTENT}
 
-The user wants to focus on the main content without distractions.`,
+Create a complete HTML document optimized for distraction-free reading.`,
   },
   {
     id: 'reader',
     name: 'Reader Mode',
-    description: 'Extract article content for clean reading',
+    description: 'Article-optimized typography',
     icon: '☰',
     supportsImages: false,
-    systemPrompt: `You are a content extraction expert. Your job is to:
-1. Identify the primary article/content container
-2. Hide everything else (header, footer, sidebars, comments, ads)
-3. Suggest CSS to improve typography and readability
+    systemPrompt: `You are a typography expert creating an optimal article reading experience.
 
-The goal is a clean, distraction-free reading experience.
+Given content extracted from a webpage, generate a COMPLETE HTML document that:
+- Uses excellent typography (proper font sizes, line-height, letter-spacing)
+- Has a refined type scale based on a modular scale
+- Includes proper styling for all content types (headings, quotes, code, lists, tables)
+- Shows article metadata elegantly (author, date, reading time)
+- Has a subtle, sophisticated color palette
+- Includes a progress indicator or reading position marker
+
+Design style: Editorial, refined, like a well-designed digital magazine.
 ${RESPONSE_FORMAT}`,
-    userPromptTemplate: `Extract the main readable content from this page:
+    userPromptTemplate: `Transform this content into a beautifully typeset article:
 
-{DOM}
+{CONTENT}
 
-Identify the article content and hide everything else for a clean reader view.`,
-  },
-  {
-    id: 'illustrated',
-    name: 'Illustrated',
-    description: 'Add AI-generated images to enhance content',
-    icon: '🎨',
-    supportsImages: true,
-    systemPrompt: `You are a creative web designer who enhances pages with AI-generated imagery. Your job is to:
-1. Analyze the page content and identify key themes, topics, and mood
-2. Hide distracting elements (ads, sidebars, clutter)
-3. Suggest 1-3 AI-generated images that would enhance the content:
-   - A hero/header image that captures the main theme
-   - Supporting diagrams or illustrations for complex concepts
-   - Decorative backgrounds that set the right mood
-4. Write detailed, evocative prompts for each image
-
-Consider the content type:
-- Technical docs → Clean diagrams, flowcharts, architectural illustrations
-- News/articles → Relevant photorealistic or editorial imagery
-- Blogs → Warm, engaging illustrations matching the author's tone
-- Product pages → Professional, polished visuals
-${RESPONSE_FORMAT_WITH_IMAGES}`,
-    userPromptTemplate: `Analyze this page and suggest AI-generated images to enhance the reading experience:
-
-{DOM}
-
-Create a visually enhanced version with relevant, AI-generated imagery.`,
-  },
-  {
-    id: 'visualize',
-    name: 'Visualize',
-    description: 'Generate diagrams and infographics',
-    icon: '📊',
-    supportsImages: true,
-    systemPrompt: `You are a data visualization and diagram expert. Your job is to:
-1. Identify concepts, processes, or data that could be better understood with visuals
-2. Hide distracting elements to focus on the content
-3. Generate 1-3 images that visualize key information:
-   - Flowcharts for processes
-   - Diagrams for architectures or relationships
-   - Infographics for data or statistics
-   - Concept maps for complex ideas
-4. Write precise prompts that describe the diagram structure clearly
-
-Image prompts should specify:
-- The type of diagram (flowchart, mind map, architecture diagram, etc.)
-- Key elements and their relationships
-- Visual style (minimalist, technical, colorful, etc.)
-- Color scheme suggestions
-${RESPONSE_FORMAT_WITH_IMAGES}`,
-    userPromptTemplate: `Analyze this page and create visualizations for complex concepts:
-
-{DOM}
-
-Generate diagrams or infographics that help explain the content visually.`,
+Create an HTML document with exceptional typography and reading experience.`,
   },
   {
     id: 'aesthetic',
     name: 'Aesthetic',
-    description: 'Transform with artistic backgrounds and imagery',
+    description: 'Creative visual transformation',
     icon: '✨',
     supportsImages: true,
-    systemPrompt: `You are an artistic web designer who transforms pages into visually stunning experiences. Your job is to:
-1. Understand the page's content and emotional tone
-2. Hide all distractions and clutter
-3. Generate 1-2 artistic images:
-   - A beautiful background that sets the mood
-   - Optional accent imagery that complements the content
-4. Apply styling for a cohesive aesthetic experience
+    systemPrompt: `You are a creative director creating STUNNING visual experiences from web content.
 
-Consider artistic styles:
-- Minimalist and clean for professional content
-- Warm and cozy for personal blogs
-- Bold and vibrant for creative content
-- Serene and calming for wellness/lifestyle
-- Dark and moody for dramatic effect
+BE BOLD AND CREATIVE. This is about artistic transformation, not just cleaning up.
+
+Given content extracted from a webpage, generate a COMPLETE HTML document that:
+- Has a STRIKING visual identity - bold colors, interesting layouts, dramatic typography
+- Uses creative CSS techniques: gradients, blend modes, clip-paths, transforms
+- Features asymmetric or unconventional layouts where appropriate
+- Includes subtle animations and micro-interactions (CSS only, no JS)
+- Creates visual hierarchy through scale contrast and whitespace
+- May use interesting grid arrangements, overlapping elements, or magazine-style layouts
+- Incorporates AI-generated images as hero visuals or accent elements
+
+Creative techniques to consider:
+- Large, impactful hero sections with dramatic type
+- Pull quotes with distinctive styling
+- Gradient text or gradient overlays
+- Interesting image treatments (duotone, borders, shapes)
+- Creative use of whitespace
+- Bold color blocking
+- Asymmetric grids
+- Floating accent elements
+
+DON'T be boring. DON'T just center everything. CREATE something visually memorable.
+
+Design style: Creative, bold, magazine-editorial meets modern web. Think award-winning portfolio sites.
 ${RESPONSE_FORMAT_WITH_IMAGES}`,
-    userPromptTemplate: `Transform this page into a visually aesthetic experience:
+    userPromptTemplate: `Transform this content into a VISUALLY STUNNING creative experience:
 
-{DOM}
+{CONTENT}
 
-Create a beautiful, artistic presentation of the content.`,
+Be bold! Create a dramatic, artistic presentation that makes this content visually memorable.
+Use creative layouts, bold typography, interesting color choices, and AI-generated imagery.`,
+  },
+  {
+    id: 'illustrated',
+    name: 'Illustrated',
+    description: 'Enhanced with AI imagery',
+    icon: '🎨',
+    supportsImages: true,
+    systemPrompt: `You are a designer who LOVES illustrations and enhances content with MANY meaningful AI-generated images.
+
+Given content extracted from a webpage, generate a COMPLETE HTML document that:
+- Has a clean, professional layout
+- Is RICHLY illustrated with AI-generated images throughout
+- Include an image for EVERY major section or concept
+- For technical content: diagrams, flowcharts, architectural illustrations, code visualizations
+- For articles: evocative imagery that captures themes, emotions, and key moments
+- For how-tos: step-by-step visual illustrations for each step
+- For lists: consider an icon or small illustration for each item
+- Places images strategically to break up text and add visual interest
+
+BE GENEROUS WITH IMAGES:
+- Aim for at least 5-10 images for longer content
+- Every H2 section should consider having an accompanying image
+- Use a mix of hero images, inline illustrations, and accent visuals
+- More images = more engaging and delightful experience
+
+Write detailed image prompts that specify:
+- Subject and composition
+- Style (illustration, diagram, photo-realistic, watercolor, etc.)
+- Color palette that matches the page design
+- Mood and atmosphere
+- Specific details that make the image relevant to that section
+
+Design style: Clean and professional with ABUNDANT thoughtfully placed illustrations.
+${RESPONSE_FORMAT_WITH_IMAGES}`,
+    userPromptTemplate: `Transform this content with MANY meaningful AI-generated illustrations:
+
+{CONTENT}
+
+Create an HTML document with ABUNDANT strategically placed AI-generated images that enhance the content. Be generous - include an illustration for every major section or concept!`,
+  },
+  {
+    id: 'visualize',
+    name: 'Visualize',
+    description: 'Diagrams and infographics',
+    icon: '📊',
+    supportsImages: true,
+    systemPrompt: `You are an information designer who transforms content into visual explanations.
+
+Given content extracted from a webpage, generate a COMPLETE HTML document that:
+- Presents information visually wherever possible
+- Uses AI-generated diagrams for processes and relationships
+- Creates infographic-style layouts for data
+- Uses visual hierarchy to guide understanding
+- Balances visuals with readable text
+
+For image prompts, create:
+- Flowcharts and process diagrams
+- Concept maps and relationship diagrams
+- Data visualizations and infographics
+- Architectural or system diagrams
+- Step-by-step illustrated guides
+
+Be specific in prompts: describe the diagram structure, labels, colors, and style.
+
+Design style: Informational, clear, educational. Think textbook meets modern infographic.
+${RESPONSE_FORMAT_WITH_IMAGES}`,
+    userPromptTemplate: `Transform this content into a visual, diagram-rich explanation:
+
+{CONTENT}
+
+Create an HTML document that visualizes concepts with diagrams and infographics.`,
   },
   {
     id: 'declutter',
-    name: 'Declutter',
-    description: 'Remove visual noise while keeping structure',
+    name: 'Clean',
+    description: 'Simple and fast',
     icon: '🧹',
     supportsImages: false,
-    systemPrompt: `You are a UI simplification expert. Your job is to:
-1. Identify and hide ads, banners, and promotional content
-2. Remove floating elements, popups, and overlays
-3. Simplify without removing navigation or useful page elements
+    systemPrompt: `You are a performance-focused developer creating ultra-fast, clean pages.
 
-Be moderate - remove noise but keep the page functional.
+Given content extracted from a webpage, generate a COMPLETE HTML document that:
+- Is extremely lightweight and fast
+- Uses minimal CSS (under 5KB)
+- Has a simple, clean aesthetic
+- Loads nearly instantly
+- Works great on slow connections
+- Uses system fonts only
+- Has no generated images
+
+Design style: Brutalist simplicity. Fast and functional. Think craigslist meets modern minimalism.
 ${RESPONSE_FORMAT}`,
-    userPromptTemplate: `Declutter this page by removing visual noise:
+    userPromptTemplate: `Transform this content into an ultra-clean, fast-loading page:
 
-{DOM}
+{CONTENT}
 
-Remove ads, banners, and promotional content while keeping the page functional.`,
+Create the simplest possible HTML document that still looks good and is easy to read.`,
   },
   {
     id: 'custom',
     name: 'Custom',
-    description: 'Write your own instructions',
+    description: 'Your own instructions',
     icon: '✎',
     supportsImages: true,
-    systemPrompt: `You are a web page transformation expert. Follow the user's specific instructions to modify the page.
+    systemPrompt: `You are a versatile web designer following custom instructions.
 
-If the user requests images, include them in your response.
+Generate a COMPLETE HTML document based on the user's specific requirements.
 ${RESPONSE_FORMAT_WITH_IMAGES}`,
     userPromptTemplate: `{CUSTOM_PROMPT}
 
-Here is the page structure:
+Here is the content to transform:
 
-{DOM}`,
+{CONTENT}`,
   },
 ];
 
@@ -271,14 +405,19 @@ export function getRecipe(id: string): Recipe | undefined {
   return BUILT_IN_RECIPES.find(r => r.id === id);
 }
 
-export function buildPrompt(recipe: Recipe, dom: string, customPrompt?: string, includeImages?: boolean): { system: string; user: string } {
+export function buildPrompt(
+  recipe: Recipe, 
+  content: string, 
+  customPrompt?: string, 
+  includeImages?: boolean
+): { system: string; user: string } {
   let systemPrompt = recipe.systemPrompt;
-  let userPrompt = recipe.userPromptTemplate.replace('{DOM}', dom);
+  let userPrompt = recipe.userPromptTemplate.replace('{CONTENT}', content);
   
   // If images are requested but recipe doesn't have image format, add it
   if (includeImages && !recipe.supportsImages) {
     systemPrompt = systemPrompt.replace(RESPONSE_FORMAT, RESPONSE_FORMAT_WITH_IMAGES);
-    userPrompt += '\n\nAlso suggest 1-2 AI-generated images that would enhance this content.';
+    userPrompt += '\n\nAlso include 1-2 AI-generated images that would enhance this content.';
   }
   
   if (customPrompt) {

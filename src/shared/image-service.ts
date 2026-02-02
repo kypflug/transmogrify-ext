@@ -7,7 +7,7 @@ import { imageConfig, isImageConfigured } from './config';
 
 export interface ImageGenerationRequest {
   prompt: string;
-  size?: '1024x1024' | '1024x1792' | '1792x1024';
+  size?: '1024x1024' | '1024x1536' | '1536x1024' | 'auto';
   quality?: 'standard' | 'hd';
   style?: 'natural' | 'vivid';
 }
@@ -82,9 +82,6 @@ async function generateSingleImage(
         prompt: request.prompt,
         n: 1,
         size: request.size || '1024x1024',
-        quality: request.quality || 'standard',
-        style: request.style || 'natural',
-        response_format: 'b64_json', // Use base64 to avoid CORS issues
       }),
     });
 
