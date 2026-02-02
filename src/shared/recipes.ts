@@ -128,6 +128,20 @@ HTML REQUIREMENTS:
 - Convert markdown-style links [text](url) to proper <a> tags
 - For images, use the provided src URLs directly
 
+LAYOUT & TYPOGRAPHY (CRITICAL):
+- Prioritize readability: generous whitespace, breathing room between sections
+- Comfortable line-height (1.6-1.8) and paragraph spacing
+- Readable column width (max 65-75ch for body text)
+- Crisp, refined typography with clear hierarchy
+- Smart use of whitespace - don't cram content
+- Let the content breathe
+
+DARK MODE SUPPORT (REQUIRED):
+- Include <meta name="color-scheme" content="light dark"> in <head>
+- Use @media (prefers-color-scheme: dark) to define dark mode colors
+- Ensure good contrast in both light and dark modes
+- Use CSS custom properties that adapt to color scheme
+
 CSS BEST PRACTICES:
 - Use CSS custom properties for colors and spacing
 - Use clamp() for fluid typography
@@ -140,7 +154,7 @@ CSS BEST PRACTICES:
 ACCESSIBILITY:
 - Proper heading hierarchy
 - Alt text for images
-- Good color contrast
+- Good color contrast (4.5:1 minimum)
 - Focus states for interactive elements
 
 SAVE BUTTON: Include this exact HTML at the end of <body> for the save functionality:
@@ -181,8 +195,21 @@ IMAGE PLACEHOLDERS:
 - Match the "id" field in the images array
 - placement options: "hero" (top banner), "inline" (within content), "background" (section bg), "accent" (decorative)
 - Write detailed, evocative prompts for the AI image generator
-- Include as many images as would genuinely enhance the content - the more helpful illustrations the better!
-- For long articles, consider 5-10+ images at natural breakpoints
+- Be selective - each image should genuinely enhance the content
+
+LAYOUT & TYPOGRAPHY (CRITICAL):
+- Prioritize readability: generous whitespace, breathing room between sections
+- Comfortable line-height (1.6-1.8) and paragraph spacing
+- Readable column width (max 65-75ch for body text)
+- Crisp, refined typography with clear hierarchy
+- Smart use of whitespace - don't cram content
+- Let the content breathe
+
+DARK MODE SUPPORT (REQUIRED):
+- Include <meta name="color-scheme" content="light dark"> in <head>
+- Use @media (prefers-color-scheme: dark) to define dark mode colors
+- Ensure good contrast in both light and dark modes
+- Use CSS custom properties that adapt to color scheme
 
 CSS BEST PRACTICES:
 - Use CSS custom properties for colors and spacing  
