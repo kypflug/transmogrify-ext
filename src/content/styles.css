@@ -1,0 +1,95 @@
+/* Focus Remix - Content Script Styles */
+
+/* Main content marker */
+.focus-remix-main-content {
+  position: relative;
+}
+
+/* Hidden elements */
+.focus-remix-hidden {
+  display: none !important;
+}
+
+/* Active state on body */
+.focus-remix-active {
+  overflow-x: hidden;
+}
+
+/* Reader mode container */
+.focus-remix-reader-container {
+  box-sizing: border-box;
+}
+
+.focus-remix-reader-container * {
+  max-width: 100%;
+}
+
+.focus-remix-reader-container img {
+  height: auto;
+  display: block;
+  margin: 1em auto;
+}
+
+.focus-remix-reader-container pre,
+.focus-remix-reader-container code {
+  overflow-x: auto;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+}
+
+.focus-remix-reader-container pre code {
+  background: none;
+  padding: 0;
+}
+
+.focus-remix-reader-container blockquote {
+  border-left: 4px solid #ccc;
+  margin-left: 0;
+  padding-left: 1em;
+  font-style: italic;
+}
+
+.focus-remix-reader-container h1,
+.focus-remix-reader-container h2,
+.focus-remix-reader-container h3,
+.focus-remix-reader-container h4,
+.focus-remix-reader-container h5,
+.focus-remix-reader-container h6 {
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  line-height: 1.3;
+}
+
+.focus-remix-reader-container p {
+  margin: 1em 0;
+}
+
+.focus-remix-reader-container a {
+  color: #0066cc;
+  text-decoration: underline;
+}
+
+/* Dim overlay */
+.focus-remix-dim-overlay {
+  transition: opacity 0.3s ease;
+}
+
+/* Close button hover state */
+.focus-remix-close-btn:hover {
+  background-color: #555 !important;
+}
+
+/* Smooth transitions for showing/hiding */
+.focus-remix-fade-in {
+  animation: focusRemixFadeIn 0.3s ease;
+}
+
+@keyframes focusRemixFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
