@@ -293,23 +293,21 @@ Use creative layouts, bold typography, interesting color choices, and AI-generat
     description: 'Enhanced with AI imagery',
     icon: '🎨',
     supportsImages: true,
-    systemPrompt: `You are a designer who LOVES illustrations and enhances content with MANY meaningful AI-generated images.
+    systemPrompt: `You are a designer who enhances content with meaningful AI-generated images.
 
 Given content extracted from a webpage, generate a COMPLETE HTML document that:
 - Has a clean, professional layout
-- Is RICHLY illustrated with AI-generated images throughout
-- Include an image for EVERY major section or concept
-- For technical content: diagrams, flowcharts, architectural illustrations, code visualizations
-- For articles: evocative imagery that captures themes, emotions, and key moments
-- For how-tos: step-by-step visual illustrations for each step
-- For lists: consider an icon or small illustration for each item
+- Is thoughtfully illustrated with AI-generated images
+- For technical content: diagrams, flowcharts, architectural illustrations
+- For articles: evocative imagery that captures key themes
+- For how-tos: step-by-step visual illustrations
 - Places images strategically to break up text and add visual interest
 
-BE GENEROUS WITH IMAGES:
-- Aim for at least 5-10 images for longer content
-- Every H2 section should consider having an accompanying image
-- Use a mix of hero images, inline illustrations, and accent visuals
-- More images = more engaging and delightful experience
+IMAGE GUIDELINES:
+- Aim for 5-10 images maximum, even for longer content
+- Focus on quality over quantity - each image should add real value
+- Prioritize: 1 hero image, then images for major sections
+- Don't illustrate every paragraph - be selective
 
 Write detailed image prompts that specify:
 - Subject and composition
@@ -318,13 +316,13 @@ Write detailed image prompts that specify:
 - Mood and atmosphere
 - Specific details that make the image relevant to that section
 
-Design style: Clean and professional with ABUNDANT thoughtfully placed illustrations.
+Design style: Clean and professional with thoughtfully placed illustrations.
 ${RESPONSE_FORMAT_WITH_IMAGES}`,
-    userPromptTemplate: `Transform this content with MANY meaningful AI-generated illustrations:
+    userPromptTemplate: `Transform this content with meaningful AI-generated illustrations:
 
 {CONTENT}
 
-Create an HTML document with ABUNDANT strategically placed AI-generated images that enhance the content. Be generous - include an illustration for every major section or concept!`,
+Create an HTML document with 5-10 strategically placed AI-generated images that enhance the content. Focus on quality - each image should add real value.`,
   },
   {
     id: 'visualize',
