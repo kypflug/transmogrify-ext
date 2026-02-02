@@ -1,61 +1,94 @@
 # Focus Remix - AI Development Guide
 
 ## Project Context
-Focus Remix is a Microsoft Edge extension (Manifest V3) that transforms web pages using **AI-powered DOM analysis**. Instead of heuristics, it sends a compact DOM representation to GPT-5.2 (via Azure OpenAI) which analyzes the page and returns precise CSS selectors and modifications to apply.
+Focus Remix is a Microsoft Edge extension (Manifest V3) that transforms web pages into beautiful, focused reading experiences using **AI-powered HTML generation**. It extracts semantic content from pages and uses GPT-5.2 to generate complete, standalone HTML documents.
 
-**New in v2**: Optional AI image generation using gpt-image-1 for diagrams, illustrations, and backgrounds.
+**Key Features**:
+- Complete HTML generation (not DOM mutation)
+- IndexedDB storage for saved articles
+- Parallel remix support with independent progress tracking
+- Optional AI image generation via gpt-image-1.5
+- Dark mode support (`prefers-color-scheme`)
 
 ## Architecture Overview
 
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│     Popup UI    │────►│  Service Worker  │────►│ Content Script  │
-│   (popup.ts)    │     │ (background.ts)  │     │  (index.ts)     │
-└─────────────────┘     └────────┬─────────┘     └────────┬────────┘
-                                 │                        │
-                    ┌────────────▼────────────┐   ┌───────▼────────┐
-                    │    Azure OpenAI API     │   │  DOM Extractor │
-                    │  GPT-5.2 + gpt-image-1  │   │  ai-remixer.ts │
-                    └─────────────────────────┘   └────────────────┘
+│   Popup UI      │────►│  Service Worker  │────►│ Content Script  │
+│  (tabbed UI)    │     │  (orchestrator)  │     │  (extractor)    │
+└─────────────────┘     └────────┬─────────┘     └─────────────────┘
+                                 │
+              ┌──────────────────┼──────────────────┐
+              ▼                  ▼                  ▼
+     ┌────────────────┐  ┌─────────────┐  ┌────────────────┐
+     │  Azure OpenAI  │  │  IndexedDB  │  │  Viewer Page   │
+     │ GPT-5.2 + img  │  │  (storage)  │  │  (display)     │
+     └────────────────┘  └─────────────┘  └────────────────┘
 ```
 
 **Flow:**
-1. User selects a recipe and clicks "Remix"
-2. Popup sends `AI_ANALYZE` message to service worker
-3. Service worker requests DOM extraction from content script
-4. Content script extracts compact DOM representation
-5. Service worker sends DOM + recipe prompt to Azure OpenAI GPT-5.2
-6. AI returns JSON with selectors to hide, main content, custom CSS, and image placeholders
-7. If images enabled, service worker calls gpt-image-1 for each placeholder
-8. Service worker sends `APPLY_REMIX` with AI response + generated images to content script
-9. Content script applies the mutations via `AIRemixer` (including inserting images)
+1. User selects a recipe and clicks "Remix → New Tab"
+2. Service worker generates a unique request ID for tracking
+3. Content script extracts semantic content (text, structure, metadata)
+4. Service worker sends content + recipe prompt to GPT-5.2
+5. AI returns complete HTML document as JSON
+6. (Optional) Service worker generates images via gpt-image-1.5
+7. Article saved to IndexedDB with original content for respins
+8. Viewer page opens displaying the remixed article
 
 ## Key Files & Responsibilities
 
 | File | Purpose |
 |------|---------|
-| `src/content/dom-extractor.ts` | Converts live DOM to compact text representation |
-| `src/content/ai-remixer.ts` | Applies AI-generated mutations (hide, modify, inject CSS, insert images) |
+| `src/content/content-extractor.ts` | Extracts semantic content from pages |
 | `src/content/index.ts` | Content script message handling |
-| `src/shared/ai-service.ts` | Azure OpenAI API integration (GPT-5.2) |
-| `src/shared/image-service.ts` | Azure OpenAI image generation (gpt-image-1) |
-| `src/shared/recipes.ts` | Built-in prompts and recipe system |
-| `src/shared/config.ts` | Environment configuration |
-| `src/popup/popup.ts` | UI for recipe selection |
-| `src/background/service-worker.ts` | Orchestrates AI analysis + image generation flow |
+| `src/shared/ai-service.ts` | Azure OpenAI GPT-5.2 integration |
+| `src/shared/image-service.ts` | Azure OpenAI gpt-image-1.5 integration |
+| `src/shared/storage-service.ts` | IndexedDB article storage |
+| `src/shared/recipes.ts` | Built-in prompts and response format |
+| `src/popup/popup.ts` | Tabbed UI (Remix + Saved Articles) |
+| `src/viewer/viewer.ts` | Article viewer with toolbar |
+| `src/background/service-worker.ts` | Orchestrates parallel remixes |
+
+## Parallel Remix System
+
+Each remix gets a unique `requestId` for independent tracking:
+
+```typescript
+interface RemixRequest {
+  requestId: string;      // UUID
+  tabId: number;          // Source tab
+  status: RemixStatus;    // extracting | analyzing | generating-images | saving | complete | error
+  step: string;           // Current step description
+  startTime: number;
+  pageTitle: string;
+  recipeId: string;
+  error?: string;
+  articleId?: string;     // Set on completion
+}
+```
+
+Active remixes stored in `chrome.storage.local` as `activeRemixes` map.
+AbortControllers stored in memory for cancel support.
 
 ## Recipe System
 
 Built-in recipes in `recipes.ts`:
-- **Focus** - Hide distractions, emphasize main content
-- **Reader** - Extract article for clean reading
-- **Declutter** - Remove ads and banners moderately
-- **Zen** - Maximum minimalism
-- **Research** - Keep metadata and references
-- **Illustrated** - Add diagrams and illustrations (image-aware)
-- **Visualize** - Generate infographics and data visualizations (image-aware)
-- **Aesthetic** - Add artistic backgrounds and visual flair (image-aware)
+- **Focus** - Clean, distraction-free reading
+- **Reader** - Article-optimized typography
+- **Declutter** - Ultra-lightweight version
+- **Zen** - Minimal, calming aesthetic
+- **Research** - Preserve structure while improving readability
+- **Illustrated** - Add 5-10 AI-generated illustrations
+- **Visualize** - Generate diagrams and infographics
+- **Aesthetic** - Bold, artistic presentation
 - **Custom** - User writes their own prompt
+
+All recipes enforce:
+- Dark mode support via `prefers-color-scheme`
+- Readable typography (65-75ch width, 1.6-1.8 line-height)
+- Generous whitespace
+- 4.5:1 minimum contrast
 
 ### Adding a New Recipe
 ```typescript
@@ -65,8 +98,9 @@ Built-in recipes in `recipes.ts`:
   name: 'My Recipe',
   description: 'What it does',
   icon: '🎯',
+  supportsImages: false,  // or true for image-enabled recipes
   systemPrompt: `Instructions for the AI...`,
-  userPromptTemplate: `Analyze this page:\n\n{DOM}\n\nUser goal: ...`,
+  userPromptTemplate: `Transform this content:\n\n{CONTENT}`,
 }
 ```
 
@@ -75,68 +109,73 @@ Built-in recipes in `recipes.ts`:
 The AI returns JSON:
 ```typescript
 interface AIResponse {
-  hide?: string[];           // CSS selectors to hide
-  mainContent?: string;      // Selector for main content
-  customCSS?: string;        // Additional CSS to inject
-  modify?: Array<{           // Element modifications
-    selector: string;
-    styles: Record<string, string>;
-  }>;
-  imagePlaceholders?: Array<{  // Images to generate (when enabled)
-    id: string;                // Unique identifier
-    prompt: string;            // Prompt for gpt-image-1
-    position: 'before' | 'after' | 'prepend' | 'append' | 'replace-background';
-    targetSelector: string;    // Where to insert the image
-    width?: number;            // Image dimensions
-    height?: number;
-  }>;
-  explanation?: string;      // What the AI did
+  html: string;              // Complete HTML document
+  images?: ImagePlaceholder[]; // For image-enabled recipes
+  explanation?: string;      // Design choices explanation
+}
+
+interface ImagePlaceholder {
+  id: string;           // e.g., "hero-image"
+  prompt: string;       // Detailed prompt for gpt-image-1.5
+  size?: string;        // "1024x1024" | "1024x1536" | "1536x1024"
+  style?: string;       // "natural" | "vivid"
+  altText: string;      // Accessibility
+  placement: string;    // "hero" | "inline" | "background" | "accent"
 }
 ```
 
+Images are inserted via `{{image-id}}` placeholders in the HTML src attributes.
+
 ## Image Generation
 
-When the user enables "Generate AI Images", the system:
-1. Passes `includeImages: true` to the AI service
-2. AI returns `imagePlaceholders` array with prompts and positions
-3. Service worker calls `generateImages()` from `image-service.ts`
-4. Images are generated via gpt-image-1.5 and returned as base64 data URLs
-5. `AIRemixer.insertImages()` places them in the DOM at specified positions
-
-### Image Positions
-- `before` - Insert as sibling before target element
-- `after` - Insert as sibling after target element  
-- `prepend` - Insert as first child of target element
-- `append` - Insert as last child of target element
-- `replace-background` - Set as CSS background-image of target
+When the user enables "Generate AI Images":
+1. Recipe's `supportsImages: true` adds image instructions to prompt
+2. AI returns `images` array with prompts and placements
+3. Service worker calls gpt-image-1.5 for each image
+4. Images returned as base64, converted to data URLs
+5. Placeholders (`{{image-id}}`) replaced in HTML before saving
 
 ### Supported Image Sizes
 - `1024x1024` - Square (default)
 - `1024x1536` - Portrait
 - `1536x1024` - Landscape
 
-## DOM Extraction
+## Content Extraction
 
-The `DOMExtractor` class creates a compact representation:
-- Skips scripts, styles, images, inputs
-- Preserves semantic structure (tag names, IDs, classes)
-- Includes text snippets for context
-- Estimates ~5-15K tokens for typical pages
+The `ContentExtractor` extracts semantic content:
+- Title, author, date, site name
+- Main article text with structure preserved
+- Headings, lists, blockquotes, code blocks
+- Image references (URLs and alt text)
+- Links converted to markdown format
 
-### Tuning Extraction
+Output is clean text/markdown, not raw HTML.
+
+## Storage System
+
+Articles stored in IndexedDB via `storage-service.ts`:
+
 ```typescript
-const extractor = new DOMExtractor({
-  maxDepth: 15,        // How deep to traverse
-  maxTextLength: 100,  // Text snippet length
-  maxChildren: 50,     // Children per element
-});
+interface SavedArticle {
+  id: string;              // Timestamp-based unique ID
+  title: string;
+  originalUrl: string;
+  recipeId: string;
+  recipeName: string;
+  html: string;            // Complete generated HTML
+  originalContent: string; // For respin capability
+  createdAt: number;
+  isFavorite: boolean;
+}
 ```
+
+Storage supports: save, get, getAll, delete, toggleFavorite, export to file.
 
 ## Environment Configuration
 
 Create `.env` with:
 ```
-# GPT-5.2 for DOM analysis
+# GPT-5.2 for HTML generation
 VITE_AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
 VITE_AZURE_OPENAI_API_KEY=your-key
 VITE_AZURE_OPENAI_DEPLOYMENT=gpt-5.2
@@ -150,29 +189,34 @@ VITE_AZURE_IMAGE_API_VERSION=2024-10-21
 ```
 
 ## API Notes
-- GPT-5.2 uses `max_completion_tokens` instead of `max_tokens`
+- GPT-5.2 uses `max_completion_tokens` (not `max_tokens`)
+- Default timeout: 2 min (5 min for image-heavy recipes)
+- Default max tokens: 16K (48K for image-heavy recipes)
 - gpt-image-1.5 supports sizes: 1024x1024, 1024x1536, 1536x1024
+- AbortController support for request cancellation
 
 ## Security Notes
-- API key is embedded at build time (extension-only use)
-- CSS from AI is sanitized (no `expression()`, `javascript:`, etc.)
-- Allowed style properties are whitelisted
-- No user JavaScript execution
+- API keys embedded at build time (extension-only use)
+- Generated HTML displayed in sandboxed iframe
+- No external resources loaded from generated HTML
+- Images stored as embedded base64 data URLs
 
 ## Testing Checklist
-- [ ] Test recipes on news sites, docs, social media
-- [ ] Verify AI returns valid CSS selectors
-- [ ] Check cleanup fully restores page
+- [ ] Test recipes on news sites, blogs, documentation
+- [ ] Verify dark mode works correctly
+- [ ] Test parallel remixes (start 2-3 simultaneously)
+- [ ] Test cancel functionality
+- [ ] Verify saved articles persist across sessions
+- [ ] Test respin with different recipes
+- [ ] Test export to HTML file
+- [ ] Verify anchor links work in viewer
+- [ ] Test image generation with Illustrated recipe
 - [ ] Test with API errors/timeouts
-- [ ] Verify custom prompt works
-- [ ] Test image generation with Illustrated/Visualize/Aesthetic recipes
-- [ ] Verify images appear in correct positions
-- [ ] Test with image generation disabled
 
 ## Future Ideas
-- [ ] Cache AI responses per domain
+- [ ] Queue system for many parallel remixes
+- [ ] Browser notifications when remix completes
 - [ ] Site-specific recipe presets
 - [ ] Streaming AI responses for faster feedback
-- [ ] Local LLM option for privacy
 - [ ] Image caching to avoid regeneration
-- [ ] User-editable image prompts
+- [ ] Sync articles across devices
