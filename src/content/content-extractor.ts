@@ -165,9 +165,16 @@ function extractMainContent(): ContentBlock[] {
 
 function findMainContent(): Element | null {
   // Priority order for finding main content
+  // Covers major CMS platforms: WordPress, Future plc, Vox Media, Medium, Substack, etc.
   const selectors = [
-    'main',
+    '[data-article-body]',
+    '#article-body',
+    '.article-body',
+    '.article__body',
+    '.article-body__content',
+    'main article',
     'article',
+    'main',
     '[role="main"]',
     '#main-content',
     '#content',
@@ -178,6 +185,14 @@ function findMainContent(): Element | null {
     '.article-content',
     '.entry-content',
     '.story-body',
+    '.c-entry-content',
+    '.article__content',
+    '.post__content',
+    '.rich-text',
+    '[itemprop="articleBody"]',
+    '[class*="article-body"]',
+    '[class*="post-body"]',
+    '[class*="entry-body"]',
   ];
 
   for (const selector of selectors) {
@@ -213,22 +228,26 @@ function isHiddenOrSkipped(el: HTMLElement): boolean {
   const skipTags = ['script', 'style', 'noscript', 'svg', 'nav', 'header', 'footer', 'aside', 'form', 'input', 'button', 'iframe'];
   if (skipTags.includes(tag)) return true;
 
-  const style = getComputedStyle(el);
-  if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return true;
-
-  // Skip common ad/social/nav patterns
-  const className = el.className?.toLowerCase() || '';
+  // Skip common ad/social/nav patterns (cheap string checks first)
+  const className = (typeof el.className === 'string' ? el.className : '').toLowerCase();
   const id = el.id?.toLowerCase() || '';
   const skipPatterns = ['sidebar', 'comment', 'share', 'social', 'related', 'recommend', 'promo', 'ad-', 'ads-', 'advertisement', 'newsletter', 'subscribe', 'popup', 'modal', 'cookie', 'gdpr', 'nav', 'menu', 'footer', 'header', 'topic', 'follow', 'digest', 'trending', 'signup', 'sign-up', 'cta', 'banner', 'widget', 'toolbar', 'drawer', 'toast', 'snackbar', 'overlay'];
+
+  for (const pattern of skipPatterns) {
+    if (className.includes(pattern) || id.includes(pattern)) return true;
+  }
 
   // Skip elements with ARIA roles that indicate non-content
   const role = el.getAttribute('role')?.toLowerCase() || '';
   const skipRoles = ['navigation', 'banner', 'complementary', 'contentinfo', 'dialog', 'alertdialog', 'toolbar', 'menu', 'menubar'];
   if (skipRoles.includes(role)) return true;
-  
-  for (const pattern of skipPatterns) {
-    if (className.includes(pattern) || id.includes(pattern)) return true;
-  }
+
+  // Check HTML hidden attribute (avoids expensive getComputedStyle)
+  if (el.hidden || el.getAttribute('aria-hidden') === 'true') return true;
+
+  // Check inline style for display:none (cheaper than getComputedStyle)
+  const inlineStyle = el.style;
+  if (inlineStyle.display === 'none' || inlineStyle.visibility === 'hidden' || inlineStyle.opacity === '0') return true;
 
   return false;
 }
@@ -388,6 +407,23 @@ function elementToBlock(el: HTMLElement, processed: Set<Element>): ContentBlock 
       content: '',
       src: video.src || video.querySelector('source')?.src,
     };
+  }
+
+  // Div/span/section acting as a paragraph (has direct text, no block-level children)
+  if (tag === 'div' || tag === 'section' || tag === 'span') {
+    const text = el.textContent?.trim();
+    if (text && text.length > 20) {
+      // Only treat as paragraph if it has meaningful direct text content
+      // and doesn't contain block-level children (which would be processed separately)
+      const hasBlockChildren = el.querySelector('p, h1, h2, h3, h4, h5, h6, ul, ol, table, blockquote, pre, figure, div');
+      if (!hasBlockChildren) {
+        processed.add(el);
+        return {
+          type: 'paragraph',
+          content: preserveLinks(el),
+        };
+      }
+    }
   }
 
   return null;

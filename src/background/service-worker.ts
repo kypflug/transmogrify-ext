@@ -200,8 +200,39 @@ async function cleanupStaleRemixes(): Promise<{ cleaned: number; remaining: numb
 // Run cleanup on service worker startup (every time it wakes up)
 cleanupStaleRemixes().catch(console.error);
 
+/**
+ * Restore viewer/library tabs that were invalidated by an extension reload.
+ * Finds tabs showing the "Extension context invalidated" error page and
+ * re-opens them at the correct extension URL.
+ */
+async function restoreViewerTabs() {
+  try {
+    // Look for tabs that were our viewer or library pages (now dead)
+    const tabs = await chrome.tabs.query({});
+    const extensionOrigin = chrome.runtime.getURL('');
+    
+    for (const tab of tabs) {
+      if (!tab.url || !tab.id) continue;
+      
+      // Match our old extension URLs that are now invalidated
+      // After reload, the extension ID stays the same, so URLs still match
+      if (tab.url.startsWith(extensionOrigin)) {
+        // Extract the path portion to recreate the URL
+        const path = tab.url.substring(extensionOrigin.length);
+        if (path.startsWith('src/viewer/viewer.html') || path.startsWith('src/library/library.html')) {
+          const newUrl = chrome.runtime.getURL(path);
+          console.log(`[Transmogrifier] Restoring tab: ${path}`);
+          await chrome.tabs.update(tab.id, { url: newUrl });
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[Transmogrifier] Failed to restore tabs:', error);
+  }
+}
+
 // Listen for extension installation
-chrome.runtime.onInstalled.addListener((details) => {
+chrome.runtime.onInstalled.addListener(async (details) => {
   if (details.reason === 'install') {
     console.log('[Transmogrifier] Extension installed');
     loadPreferences();
@@ -212,6 +243,11 @@ chrome.runtime.onInstalled.addListener((details) => {
 
   // Set up periodic sync alarm
   setupSyncAlarm();
+
+  // Restore viewer tabs that were killed by extension reload/update
+  if (details.reason === 'update') {
+    await restoreViewerTabs();
+  }
 });
 
 // Handle messages from popup and content scripts
