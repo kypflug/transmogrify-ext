@@ -113,6 +113,7 @@ export interface RemixRequest {
   recipeId: string;
   error?: string;
   articleId?: string;
+  warning?: string; // Set when remix is taking unusually long
 }
 
 /** Progress state for resilient operations */

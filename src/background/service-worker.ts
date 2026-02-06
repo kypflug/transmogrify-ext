@@ -26,8 +26,9 @@ const abortControllers = new Map<string, AbortController>();
 // In-memory storage for elapsed time intervals
 const elapsedIntervals = new Map<string, ReturnType<typeof setInterval>>();
 
-// Max time a remix can run before being considered stale (5 minutes)
-const STALE_REMIX_THRESHOLD_MS = 5 * 60 * 1000;
+// Time thresholds for remix warnings
+const WARNING_THRESHOLD_MS = 2 * 60 * 1000;  // Show warning after 2 minutes
+const LONG_WARNING_THRESHOLD_MS = 5 * 60 * 1000;  // Stronger warning after 5 minutes
 
 /**
  * Generate a unique request ID
@@ -130,14 +131,16 @@ async function updateBadge(remixes: Record<string, RemixRequest>) {
 }
 
 /**
- * Cleanup stale remixes that got orphaned when service worker was suspended
- * This is called on startup and can be triggered manually
+ * Cleanup truly orphaned remixes (no in-memory controller means the service worker
+ * was suspended and the fetch was lost). Also adds warning flags to long-running remixes.
+ * This is called on startup and can be triggered manually.
  */
 async function cleanupStaleRemixes(): Promise<{ cleaned: number; remaining: number }> {
   const now = Date.now();
   const remixes = await getActiveRemixes();
   const cleaned: string[] = [];
   const remaining: Record<string, RemixRequest> = {};
+  let changed = false;
   
   for (const [id, remix] of Object.entries(remixes)) {
     // Already completed or errored - schedule cleanup
@@ -147,27 +150,38 @@ async function cleanupStaleRemixes(): Promise<{ cleaned: number; remaining: numb
       continue;
     }
     
-    // Check if stale (running too long without our in-memory controller)
     const elapsed = now - remix.startTime;
     const hasController = abortControllers.has(id);
     
-    if (elapsed > STALE_REMIX_THRESHOLD_MS && !hasController) {
-      // This remix is orphaned - mark as error
-      console.log(`[Focus Remix] Cleaning stale remix ${id} (${Math.round(elapsed / 1000)}s old)`);
+    if (!hasController) {
+      // No controller means the service worker restarted and the fetch is gone.
+      // This is a truly orphaned request - mark as error.
+      console.log(`[Focus Remix] Cleaning orphaned remix ${id} (${Math.round(elapsed / 1000)}s old, no controller)`);
       remix.status = 'error';
-      remix.error = `Request orphaned after ${Math.round(elapsed / 1000)}s (service worker was suspended)`;
+      remix.error = `Request lost when browser suspended the extension (after ${Math.round(elapsed / 1000)}s). Please try again.`;
       cleaned.push(id);
       remaining[id] = remix;
       scheduleCleanup(id, 5000);
+      changed = true;
     } else {
+      // Controller exists - request is still running. Add warnings if long.
+      if (elapsed > LONG_WARNING_THRESHOLD_MS) {
+        remix.warning = `Running for ${Math.round(elapsed / 1000)}s — this is unusually long but may still complete`;
+        changed = true;
+      } else if (elapsed > WARNING_THRESHOLD_MS) {
+        remix.warning = `Taking longer than usual (${Math.round(elapsed / 1000)}s)`;
+        changed = true;
+      }
       remaining[id] = remix;
     }
   }
   
-  if (cleaned.length > 0) {
+  if (changed) {
     await chrome.storage.local.set({ activeRemixes: remaining });
     await updateBadge(remaining);
-    console.log(`[Focus Remix] Cleaned ${cleaned.length} stale remixes`);
+  }
+  if (cleaned.length > 0) {
+    console.log(`[Focus Remix] Cleaned ${cleaned.length} orphaned remixes`);
   }
   
   return { cleaned: cleaned.length, remaining: Object.keys(remaining).length };
@@ -262,25 +276,29 @@ async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
     }
 
     case 'CLEAR_STALE_REMIXES': {
-      // Force cleanup all stale/stuck remixes
-      const result = await cleanupStaleRemixes();
-      // Also force-clear anything that's been running > 30 seconds without a controller
+      // Force-cancel all running remixes (with or without controllers)
       const remixes = await getActiveRemixes();
       let forceCleaned = 0;
       for (const [id, remix] of Object.entries(remixes)) {
-        if (!['complete', 'error', 'idle'].includes(remix.status) && !abortControllers.has(id)) {
+        if (!['complete', 'error', 'idle'].includes(remix.status)) {
+          // Abort if controller exists
+          const ctrl = abortControllers.get(id);
+          if (ctrl) {
+            ctrl.abort();
+          }
           remix.status = 'error';
-          remix.error = 'Manually cleared (no active controller)';
+          remix.error = 'Manually cancelled';
+          remix.warning = undefined;
           remixes[id] = remix;
           forceCleaned++;
-          scheduleCleanup(id, 1000);
+          scheduleCleanup(id, 3000);
         }
       }
       if (forceCleaned > 0) {
         await chrome.storage.local.set({ activeRemixes: remixes });
         await updateBadge(remixes);
       }
-      return { success: true, cleaned: result.cleaned + forceCleaned };
+      return { success: true, cleaned: forceCleaned };
     }
 
     case 'GET_ARTICLES': {
@@ -439,25 +457,30 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
   const aiStartTime = Date.now();
   await updateRemixProgress(requestId, { status: 'analyzing', step: 'AI is generating HTML... (0s)' });
   
-  // Update elapsed time every 5 seconds during AI call
+  // Update elapsed time every 5 seconds during AI call, add warnings for long runs
   const elapsedInterval = setInterval(async () => {
-    const elapsed = Math.round((Date.now() - aiStartTime) / 1000);
-    await updateRemixProgress(requestId, { step: `AI is generating HTML... (${elapsed}s)` });
+    const elapsed = Date.now() - aiStartTime;
+    const elapsedSec = Math.round(elapsed / 1000);
+    const updates: Partial<RemixRequest> = { step: `AI is generating HTML... (${elapsedSec}s)` };
+    
+    if (elapsed > LONG_WARNING_THRESHOLD_MS) {
+      updates.warning = `Running for ${elapsedSec}s \u2014 this is unusually long but may still complete`;
+    } else if (elapsed > WARNING_THRESHOLD_MS) {
+      updates.warning = `Taking longer than usual (${elapsedSec}s)`;
+    }
+    
+    await updateRemixProgress(requestId, updates);
   }, 5000);
   elapsedIntervals.set(requestId, elapsedInterval);
-  
-  // Determine timeout and token limits based on recipe complexity
   const isImageHeavyRecipe = generateImagesFlag || recipeId === 'illustrated';
-  const timeoutMs = isImageHeavyRecipe ? 300000 : 120000;
   const maxTokens = isImageHeavyRecipe ? 48000 : 16384;
   
-  console.log('[Focus Remix] Calling Azure OpenAI (timeout:', timeoutMs / 1000, 's, max tokens:', maxTokens, ')...');
+  console.log('[Focus Remix] Calling Azure OpenAI (max tokens:', maxTokens, ')...');
   const aiResult = await analyzeWithAI({
     recipe,
     domContent: content,
     customPrompt: message.payload?.customPrompt,
     includeImages: generateImagesFlag,
-    timeoutMs,
     maxTokens,
     abortSignal: controller.signal,
   });
@@ -603,16 +626,24 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
     recipeId,
   });
   
-  // Update elapsed time every 5 seconds
+  // Update elapsed time every 5 seconds, add warnings for long runs
   const elapsedInterval = setInterval(async () => {
-    const elapsed = Math.round((Date.now() - aiStartTime) / 1000);
-    await updateRemixProgress(requestId, { step: `AI is generating new design... (${elapsed}s)` });
+    const elapsed = Date.now() - aiStartTime;
+    const elapsedSec = Math.round(elapsed / 1000);
+    const updates: Partial<RemixRequest> = { step: `AI is generating new design... (${elapsedSec}s)` };
+    
+    if (elapsed > LONG_WARNING_THRESHOLD_MS) {
+      updates.warning = `Running for ${elapsedSec}s \u2014 this is unusually long but may still complete`;
+    } else if (elapsed > WARNING_THRESHOLD_MS) {
+      updates.warning = `Taking longer than usual (${elapsedSec}s)`;
+    }
+    
+    await updateRemixProgress(requestId, updates);
   }, 5000);
   elapsedIntervals.set(requestId, elapsedInterval);
   
-  // Determine timeout and token limits based on recipe complexity
+  // Determine token limits based on recipe complexity
   const isImageHeavyRecipe = generateImagesFlag || recipeId === 'illustrated';
-  const timeoutMs = isImageHeavyRecipe ? 300000 : 120000;
   const maxTokens = isImageHeavyRecipe ? 48000 : 16384;
   
   // Call AI service
@@ -621,7 +652,6 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
     domContent: originalArticle.originalContent,
     customPrompt: message.payload?.customPrompt,
     includeImages: generateImagesFlag,
-    timeoutMs,
     maxTokens,
     abortSignal: controller.signal,
   });

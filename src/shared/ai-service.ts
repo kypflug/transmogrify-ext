@@ -12,7 +12,6 @@ export interface AIRequestOptions {
   customPrompt?: string;
   maxTokens?: number;
   includeImages?: boolean;
-  timeoutMs?: number; // Timeout in milliseconds
   abortSignal?: AbortSignal; // For cancellation support
 }
 
@@ -44,7 +43,6 @@ export async function analyzeWithAI(options: AIRequestOptions): Promise<AIServic
     customPrompt, 
     maxTokens = 16384, 
     includeImages = false,
-    timeoutMs = 120000, // 2 minute default timeout
     abortSignal,
   } = options;
   
@@ -53,7 +51,6 @@ export async function analyzeWithAI(options: AIRequestOptions): Promise<AIServic
   console.log('[Focus Remix] AI Service - Starting request');
   console.log('[Focus Remix] Recipe:', recipe.id, 'Include images:', includeImages);
   console.log('[Focus Remix] Content length:', domContent.length, 'chars');
-  console.log('[Focus Remix] Timeout:', timeoutMs / 1000, 'seconds');
   
   const { system, user } = buildPrompt(recipe, domContent, customPrompt, includeImages);
   
@@ -63,19 +60,13 @@ export async function analyzeWithAI(options: AIRequestOptions): Promise<AIServic
 
   const url = `${aiConfig.endpoint}/openai/deployments/${aiConfig.deployment}/chat/completions?api-version=${aiConfig.apiVersion}`;
 
-  // Create an AbortController for timeout, or use provided signal
+  // Use the provided abort signal for user-initiated cancellation only
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => {
-    console.error('[Focus Remix] Request timed out after', timeoutMs / 1000, 'seconds');
-    controller.abort();
-  }, timeoutMs);
   
-  // If an external abort signal is provided, listen to it
   if (abortSignal) {
     abortSignal.addEventListener('abort', () => {
       console.log('[Focus Remix] Request cancelled by user');
       controller.abort();
-      clearTimeout(timeoutId);
     });
   }
 
@@ -100,7 +91,6 @@ export async function analyzeWithAI(options: AIRequestOptions): Promise<AIServic
       signal: controller.signal,
     });
     
-    clearTimeout(timeoutId);
     const elapsed = Date.now() - startTime;
     console.log('[Focus Remix] Response received in', (elapsed / 1000).toFixed(1), 'seconds');
 
@@ -163,14 +153,13 @@ export async function analyzeWithAI(options: AIRequestOptions): Promise<AIServic
       durationMs: totalElapsed,
     };
   } catch (error) {
-    clearTimeout(timeoutId);
     const elapsed = Date.now() - startTime;
     
     if (error instanceof Error && error.name === 'AbortError') {
-      console.error('[Focus Remix] Request aborted (timeout) after', (elapsed / 1000).toFixed(1), 'seconds');
+      console.log('[Focus Remix] Request aborted after', (elapsed / 1000).toFixed(1), 'seconds');
       return {
         success: false,
-        error: `Request timed out after ${Math.round(elapsed / 1000)} seconds. The page may be too large or the API is slow.`,
+        error: 'Cancelled by user',
         durationMs: elapsed,
       };
     }

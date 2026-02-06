@@ -12,6 +12,7 @@ import { ArticleSummary } from '../shared/storage-service';
 
 // State
 let selectedRecipeId = 'focus';
+let pinnedRecipeIds: string[] = [];
 
 // DOM Elements - Tabs
 const tabNav = document.querySelector('.tab-nav')!;
@@ -31,7 +32,7 @@ const clearStuckLink = document.getElementById('clearStuck')!;
 // DOM Elements - Remix
 const elements = {
   statusIndicator: document.getElementById('statusIndicator')!,
-  recipeGrid: document.getElementById('recipeGrid')!,
+  recipeList: document.getElementById('recipeList')!,
   customPromptSection: document.getElementById('customPromptSection')!,
   customPrompt: document.getElementById('customPrompt') as HTMLTextAreaElement,
   explanationSection: document.getElementById('explanationSection')!,
@@ -55,6 +56,9 @@ async function init() {
   if (!isImageConfigured()) {
     elements.imageToggleSection.style.display = 'none';
   }
+
+  // Load pinned recipes from storage
+  await loadPinnedRecipes();
 
   // Render recipe buttons
   renderRecipes();
@@ -181,15 +185,17 @@ async function loadActiveRemixes() {
       const elapsedStr = elapsed > 0 ? ` (${elapsed}s)` : '';
       const statusClass = remix.status === 'complete' ? 'complete' : remix.status === 'error' ? 'error' : '';
       const showCancel = !['complete', 'error'].includes(remix.status);
+      const hasWarning = remix.warning && !['complete', 'error'].includes(remix.status);
       
       return `
-        <div class="active-remix-item ${statusClass}" data-request-id="${remix.requestId}">
+        <div class="active-remix-item ${statusClass} ${hasWarning ? 'warning' : ''}" data-request-id="${remix.requestId}">
           <div class="active-remix-icon">${statusIcon}</div>
           <div class="active-remix-info">
             <div class="active-remix-title">${escapeHtml(remix.pageTitle)}</div>
             <div class="active-remix-status">${remix.step}${elapsedStr}</div>
+            ${hasWarning ? `<div class="active-remix-warning">⚠ ${escapeHtml(remix.warning!)}</div>` : ''}
           </div>
-          ${showCancel ? `<button class="active-remix-cancel" data-action="cancel">Cancel</button>` : ''}
+          ${showCancel ? `<button class="active-remix-cancel" data-action="cancel" title="Cancel this remix">✕</button>` : ''}
         </div>
       `;
     }).join('');
@@ -325,15 +331,100 @@ function switchTab(tab: string) {
 }
 
 /**
- * Render recipe selection buttons
+ * Load pinned recipe IDs from chrome.storage.sync
+ */
+async function loadPinnedRecipes() {
+  try {
+    const result = await chrome.storage.sync.get('pinnedRecipes');
+    pinnedRecipeIds = result.pinnedRecipes || [];
+  } catch (e) {
+    console.log('[Popup] Failed to load pinned recipes');
+    pinnedRecipeIds = [];
+  }
+}
+
+/**
+ * Save pinned recipe IDs to chrome.storage.sync
+ */
+async function savePinnedRecipes() {
+  try {
+    await chrome.storage.sync.set({ pinnedRecipes: pinnedRecipeIds });
+  } catch (e) {
+    console.error('[Popup] Failed to save pinned recipes:', e);
+  }
+}
+
+/**
+ * Toggle pin state for a recipe
+ */
+async function togglePin(recipeId: string) {
+  const idx = pinnedRecipeIds.indexOf(recipeId);
+  if (idx >= 0) {
+    pinnedRecipeIds.splice(idx, 1);
+  } else {
+    pinnedRecipeIds.push(recipeId);
+  }
+  await savePinnedRecipes();
+  renderRecipes();
+}
+
+/**
+ * Render recipe selection tiles, pinned recipes first
  */
 function renderRecipes() {
-  elements.recipeGrid.innerHTML = BUILT_IN_RECIPES.map((recipe) => `
-    <button class="recipe-btn ${recipe.id === selectedRecipeId ? 'active' : ''}" data-recipe="${recipe.id}">
-      <span class="recipe-icon">${recipe.icon}</span>
-      <span class="recipe-name">${recipe.name}</span>
-    </button>
-  `).join('');
+  const pinned = BUILT_IN_RECIPES.filter(r => pinnedRecipeIds.includes(r.id));
+  const unpinned = BUILT_IN_RECIPES.filter(r => !pinnedRecipeIds.includes(r.id));
+  
+  // Sort pinned in the order they were pinned
+  pinned.sort((a, b) => pinnedRecipeIds.indexOf(a.id) - pinnedRecipeIds.indexOf(b.id));
+  
+  let html = '';
+  
+  // Render pinned tiles
+  for (const recipe of pinned) {
+    html += renderRecipeTile(recipe, true);
+  }
+  
+  // Add divider if there are pinned recipes
+  if (pinned.length > 0 && unpinned.length > 0) {
+    html += '<div class="recipe-pin-divider"></div>';
+  }
+  
+  // Render unpinned tiles
+  for (const recipe of unpinned) {
+    html += renderRecipeTile(recipe, false);
+  }
+  
+  elements.recipeList.innerHTML = html;
+  
+  // Scroll selected recipe into view if needed
+  const activeTile = elements.recipeList.querySelector('.recipe-tile.active');
+  if (activeTile) {
+    activeTile.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+/**
+ * Render a single recipe tile
+ */
+function renderRecipeTile(recipe: typeof BUILT_IN_RECIPES[0], isPinned: boolean): string {
+  const isActive = recipe.id === selectedRecipeId;
+  const pinIcon = isPinned ? '📌' : '📍';
+  const pinTitle = isPinned ? 'Unpin recipe' : 'Pin to top';
+  
+  return `
+    <div class="recipe-tile ${isActive ? 'active' : ''}" data-recipe="${recipe.id}">
+      <div class="recipe-tile-icon">${recipe.icon}</div>
+      <div class="recipe-tile-body">
+        <div class="recipe-tile-header">
+          <span class="recipe-tile-name">${recipe.name}</span>
+        </div>
+        <div class="recipe-tile-summary">${recipe.summary}</div>
+      </div>
+      <button class="recipe-pin-btn ${isPinned ? 'pinned' : ''}" 
+              data-pin="${recipe.id}" title="${pinTitle}">${pinIcon}</button>
+    </div>
+  `;
 }
 
 /**
@@ -348,11 +439,22 @@ function setupEventListeners() {
     }
   });
   
-  // Recipe selection
-  elements.recipeGrid.addEventListener('click', (e) => {
-    const btn = (e.target as HTMLElement).closest('.recipe-btn') as HTMLElement;
-    if (btn) {
-      selectRecipe(btn.dataset.recipe!);
+  // Recipe selection (click on tile, not the pin button)
+  elements.recipeList.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+    
+    // Handle pin button clicks
+    const pinBtn = target.closest('.recipe-pin-btn') as HTMLElement;
+    if (pinBtn?.dataset.pin) {
+      e.stopPropagation();
+      togglePin(pinBtn.dataset.pin);
+      return;
+    }
+    
+    // Handle tile selection
+    const tile = target.closest('.recipe-tile') as HTMLElement;
+    if (tile?.dataset.recipe) {
+      selectRecipe(tile.dataset.recipe);
     }
   });
   
@@ -410,9 +512,9 @@ function setupEventListeners() {
 function selectRecipe(recipeId: string) {
   selectedRecipeId = recipeId;
   
-  // Update button states
-  document.querySelectorAll('.recipe-btn').forEach((btn) => {
-    btn.classList.toggle('active', (btn as HTMLElement).dataset.recipe === recipeId);
+  // Update tile states
+  document.querySelectorAll('.recipe-tile').forEach((tile) => {
+    tile.classList.toggle('active', (tile as HTMLElement).dataset.recipe === recipeId);
   });
   
   // Show/hide custom prompt
