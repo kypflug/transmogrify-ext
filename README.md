@@ -6,7 +6,8 @@ An AI-powered Microsoft Edge extension that "remixes" web pages into beautiful, 
 
 - **AI-Powered Transformation**: GPT-5.2 generates complete, standalone HTML documents
 - **AI Image Generation**: Optional gpt-image-1.5 integration for diagrams and illustrations
-- **Built-in Recipes**: Focus, Reader, Declutter, Zen, Research, Illustrated, Visualize, Aesthetic modes
+- **Built-in Recipes**: Focus, Reader, Aesthetic, Illustrated, Visualize, Clean, Interview, and Custom modes
+- **Pin Favorites**: Pin preferred recipes to the top of the list
 - **Saved Articles**: IndexedDB storage for unlimited article saving
 - **Respin**: Re-transform saved articles with different recipes
 - **Parallel Remixes**: Run multiple remixes simultaneously with independent progress tracking
@@ -66,15 +67,14 @@ Open a saved article and click "Respin" to re-transform it with a different reci
 
 | Recipe | Description |
 |--------|-------------|
-| Focus | Clean, distraction-free reading with centered content |
-| Reader | Article-optimized layout with refined typography |
-| Declutter | Ultra-lightweight, fast-loading version |
-| Zen | Minimal, calming aesthetic |
-| Research | Preserve structure while improving readability |
-| Illustrated | Add 5-10 AI-generated illustrations |
-| Visualize | Generate diagrams and infographics |
-| Aesthetic | Bold, artistic presentation |
-| Custom | Write your own AI prompt |
+| Focus Mode | Strips distractions and centers content in a calm, book-like layout |
+| Reader Mode | Editorial magazine layout with drop caps, pull quotes, and refined type |
+| Aesthetic | Bold, artistic redesign with dramatic layouts and color |
+| Illustrated | Adds AI-generated photos and illustrations in a warm editorial style |
+| Visualize | Turns concepts into annotated diagrams and data-rich layouts |
+| Clean | Ultra-lightweight brutalist page with minimal CSS |
+| Interview | Reformats Q&A and interviews as a messaging chat with speech bubbles |
+| Custom | Write your own prompt for full creative control |
 
 All recipes include:
 - Dark mode support (`prefers-color-scheme`)
