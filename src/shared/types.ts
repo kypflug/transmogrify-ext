@@ -56,7 +56,12 @@ export interface RemixMessage {
     | 'RESPIN_ARTICLE'
     | 'GET_ACTIVE_REMIXES'
     | 'CANCEL_REMIX'
-    | 'CLEAR_STALE_REMIXES';
+    | 'CLEAR_STALE_REMIXES'
+    | 'SYNC_SIGN_IN'
+    | 'SYNC_SIGN_OUT'
+    | 'SYNC_STATUS'
+    | 'SYNC_NOW'
+    | 'SYNC_DOWNLOAD_ARTICLE';
   payload?: RemixPayload;
 }
 
@@ -97,6 +102,15 @@ export interface RemixResponse {
   requestId?: string; // For parallel remix tracking
   activeRemixes?: RemixRequest[]; // For GET_ACTIVE_REMIXES
   cleaned?: number; // For CLEAR_STALE_REMIXES
+  // Sync fields
+  syncStatus?: {
+    signedIn: boolean;
+    userName?: string;
+    userEmail?: string;
+    lastSyncTime: number;
+    isSyncing: boolean;
+    lastError?: string;
+  };
 }
 
 /** Status of a remix operation */

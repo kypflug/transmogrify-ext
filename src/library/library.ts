@@ -48,6 +48,7 @@ const favoriteIcon = document.getElementById('favoriteIcon') as HTMLElement;
 const btnFavorite = document.getElementById('btnFavorite') as HTMLButtonElement;
 const btnExport = document.getElementById('btnExport') as HTMLButtonElement;
 const btnOriginal = document.getElementById('btnOriginal') as HTMLButtonElement;
+const btnNewTab = document.getElementById('btnNewTab') as HTMLButtonElement;
 const btnRespin = document.getElementById('btnRespin') as HTMLButtonElement;
 const btnDelete = document.getElementById('btnDelete') as HTMLButtonElement;
 
@@ -69,6 +70,11 @@ const deleteArticleTitle = document.getElementById('deleteArticleTitle') as HTML
 const cancelDeleteBtn = document.getElementById('cancelDeleteBtn') as HTMLButtonElement;
 const confirmDeleteBtn = document.getElementById('confirmDeleteBtn') as HTMLButtonElement;
 
+// Sync bar
+const syncBarIcon = document.getElementById('syncBarIcon') as HTMLElement;
+const syncBarText = document.getElementById('syncBarText') as HTMLElement;
+const syncBarBtn = document.getElementById('syncBarBtn') as HTMLButtonElement;
+
 // ─── Init ────────────────────────────────────────────
 async function init() {
   restorePreferences();
@@ -76,6 +82,7 @@ async function init() {
   setupEventListeners();
   restoreSidebarWidth();
   await loadArticles();
+  await loadSyncStatus();
 
   // If URL has ?id=, pre-select that article
   const params = new URLSearchParams(window.location.search);
@@ -302,6 +309,13 @@ function handleOriginal() {
   window.open(currentArticle.originalUrl, '_blank');
 }
 
+function handleNewTab() {
+  if (!currentArticle) return;
+  const blob = new Blob([currentArticle.html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+}
+
 function handleDeletePrompt() {
   if (!currentArticle) return;
   deleteArticleTitle.textContent = currentArticle.title;
@@ -454,6 +468,7 @@ function setupEventListeners() {
   btnFavorite.addEventListener('click', handleFavorite);
   btnExport.addEventListener('click', handleExport);
   btnOriginal.addEventListener('click', handleOriginal);
+  btnNewTab.addEventListener('click', handleNewTab);
   btnDelete.addEventListener('click', handleDeletePrompt);
   btnRespin.addEventListener('click', openRespinModal);
 
@@ -497,6 +512,10 @@ function setupEventListeners() {
 
   // Keyboard navigation
   document.addEventListener('keydown', handleKeyboard);
+
+  // Sync bar
+  syncBarBtn.addEventListener('click', handleSyncNow);
+  syncBarText.addEventListener('click', handleSyncSignIn);
 }
 
 // ─── Keyboard ────────────────────────────────────────
@@ -696,6 +715,95 @@ function escapeHtml(str: string): string {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+// ─── Sync ────────────────────────────────────────────
+
+async function loadSyncStatus() {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'SYNC_STATUS' });
+    if (!response?.syncStatus) {
+      syncBarBtn.classList.add('hidden');
+      return;
+    }
+
+    const { signedIn, lastSyncTime, isSyncing, lastError } = response.syncStatus;
+
+    if (!signedIn) {
+      syncBarIcon.textContent = '☁️';
+      syncBarText.textContent = 'Sign in to sync';
+      syncBarText.classList.add('clickable');
+      syncBarBtn.classList.add('hidden');
+      return;
+    }
+
+    syncBarText.classList.remove('clickable');
+
+    syncBarBtn.classList.remove('hidden');
+
+    if (isSyncing) {
+      syncBarIcon.textContent = '🔄';
+      syncBarText.textContent = 'Syncing…';
+      syncBarBtn.classList.add('syncing');
+    } else if (lastError) {
+      syncBarIcon.textContent = '⚠️';
+      syncBarText.textContent = `Sync error`;
+      syncBarBtn.classList.remove('syncing');
+    } else if (lastSyncTime) {
+      syncBarIcon.textContent = '☁️';
+      syncBarText.textContent = `Synced ${formatRelativeTime(lastSyncTime)}`;
+      syncBarBtn.classList.remove('syncing');
+    } else {
+      syncBarIcon.textContent = '☁️';
+      syncBarText.textContent = 'Not yet synced';
+      syncBarBtn.classList.remove('syncing');
+    }
+  } catch {
+    syncBarBtn.classList.add('hidden');
+  }
+}
+
+function formatRelativeTime(timestamp: number): string {
+  const seconds = Math.floor((Date.now() - timestamp) / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+async function handleSyncSignIn() {
+  if (!syncBarText.classList.contains('clickable')) return;
+  syncBarText.textContent = 'Signing in…';
+  syncBarText.classList.remove('clickable');
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'SYNC_SIGN_IN' });
+    if (response?.success) {
+      await loadSyncStatus();
+      await loadArticles();
+    } else {
+      syncBarText.textContent = 'Sign in failed';
+      syncBarText.classList.add('clickable');
+    }
+  } catch {
+    syncBarText.textContent = 'Sign in failed';
+    syncBarText.classList.add('clickable');
+  }
+}
+
+async function handleSyncNow() {
+  syncBarBtn.classList.add('syncing');
+  syncBarText.textContent = 'Syncing…';
+  try {
+    await chrome.runtime.sendMessage({ type: 'SYNC_NOW' });
+    await loadSyncStatus();
+    await loadArticles();
+  } catch {
+    syncBarBtn.classList.remove('syncing');
+    syncBarText.textContent = 'Sync failed';
+  }
 }
 
 // ─── Start ───────────────────────────────────────────

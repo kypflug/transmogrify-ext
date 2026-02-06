@@ -261,6 +261,68 @@ body {
   flex-shrink: 0;
 }
 
+/* ─── Sync Bar ─── */
+.sync-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border-top: 1px solid var(--edge-border-subtle);
+  font-size: 11px;
+  color: var(--edge-text-secondary);
+  flex-shrink: 0;
+}
+
+.sync-bar-icon {
+  font-size: 12px;
+}
+
+.sync-bar-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sync-bar-text.clickable {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+
+.sync-bar-text.clickable:hover {
+  color: var(--edge-blue, #0078D4);
+}
+
+.sync-bar-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.sync-bar-btn:hover {
+  opacity: 1;
+  background: var(--edge-blue-light);
+}
+
+.sync-bar-btn.syncing {
+  animation: spin 1s linear infinite;
+}
+
+.sync-bar-btn.hidden {
+  display: none;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 /* ─── Sidebar Empty State ─── */
 .sidebar-empty {
   flex: 1;

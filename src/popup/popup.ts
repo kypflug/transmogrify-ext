@@ -1,27 +1,18 @@
 /**
  * Transmogrifier - Popup Script
  * Handles the extension popup UI for AI-powered transmogrification
- * With tabbed interface for Transmogrify and Saved Articles
  * Supports parallel transmogrify operations
  */
 
 import { RemixMessage, RemixRequest } from '../shared/types';
 import { BUILT_IN_RECIPES } from '../shared/recipes';
 import { isAIConfigured, isImageConfigured } from '../shared/config';
-import { ArticleSummary } from '../shared/storage-service';
 
 // State
 let selectedRecipeId = 'focus';
 let pinnedRecipeIds: string[] = [];
 
-// DOM Elements - Tabs
-const tabNav = document.querySelector('.tab-nav')!;
-const remixTab = document.getElementById('remixTab')!;
-const savedTab = document.getElementById('savedTab')!;
-const articleCount = document.getElementById('articleCount')!;
-const articlesList = document.getElementById('articlesList')!;
-const emptyState = document.getElementById('emptyState')!;
-const storageInfo = document.getElementById('storageInfo')!;
+// DOM Elements
 const openLibraryBtn = document.getElementById('openLibraryBtn')!;
 
 // Open library button
@@ -74,96 +65,11 @@ async function init() {
   // Set up event listeners
   setupEventListeners();
   
-  // Load article count for badge
-  await loadArticleCount();
-  
   // Load active remixes
   await loadActiveRemixes();
   
   // Start polling for updates
   startPolling();
-}
-
-/**
- * Load article count for the tab badge
- */
-async function loadArticleCount() {
-  try {
-    const response = await chrome.runtime.sendMessage({ type: 'GET_STORAGE_STATS' });
-    if (response?.success && response.stats) {
-      articleCount.textContent = response.stats.count > 0 ? String(response.stats.count) : '';
-    }
-  } catch (e) {
-    console.log('[Popup] Failed to load article count');
-  }
-}
-
-/**
- * Load and display saved articles
- */
-async function loadSavedArticles() {
-  try {
-    const response = await chrome.runtime.sendMessage({ type: 'GET_ARTICLES' });
-    if (!response?.success) {
-      console.error('[Popup] Failed to load articles:', response?.error);
-      return;
-    }
-
-    const articles: ArticleSummary[] = response.articles || [];
-    
-    // Update storage info
-    const statsResponse = await chrome.runtime.sendMessage({ type: 'GET_STORAGE_STATS' });
-    if (statsResponse?.success && statsResponse.stats) {
-      const sizeMB = (statsResponse.stats.totalSize / (1024 * 1024)).toFixed(1);
-      storageInfo.textContent = `${articles.length} articles • ${sizeMB} MB`;
-    }
-
-    // Show empty state or articles
-    if (articles.length === 0) {
-      articlesList.style.display = 'none';
-      emptyState.style.display = 'block';
-      return;
-    }
-
-    emptyState.style.display = 'none';
-    articlesList.style.display = 'block';
-    
-    // Render article list
-    articlesList.innerHTML = articles.map((article) => {
-      const date = new Date(article.createdAt);
-      const dateStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-      const sizeKB = Math.round(article.size / 1024);
-      
-      return `
-        <div class="article-item" data-id="${article.id}">
-          <div class="article-thumbnail">📄</div>
-          <div class="article-info">
-            <div class="article-title">${escapeHtml(article.title)}</div>
-            <div class="article-meta">
-              <span class="article-recipe">${escapeHtml(article.recipeName)}</span>
-              <span>${dateStr}</span>
-              <span>${sizeKB} KB</span>
-            </div>
-          </div>
-          <div class="article-actions">
-            <button class="article-action-btn favorite ${article.isFavorite ? 'active' : ''}" 
-                    data-action="favorite" title="Favorite">
-              ${article.isFavorite ? '★' : '☆'}
-            </button>
-            <button class="article-action-btn export" data-action="export" title="Save to file">
-              💾
-            </button>
-            <button class="article-action-btn delete" data-action="delete" title="Delete">
-              🗑️
-            </button>
-          </div>
-        </div>
-      `;
-    }).join('');
-
-  } catch (e) {
-    console.error('[Popup] Error loading articles:', e);
-  }
 }
 
 /**
@@ -263,78 +169,6 @@ async function clearStuckRemixes() {
     await loadActiveRemixes();
   } catch (e) {
     console.error('[Popup] Failed to clear stuck remixes:', e);
-  }
-}
-
-/**
- * Handle article actions (click, favorite, export, delete)
- */
-async function handleArticleAction(articleId: string, action: string) {
-  try {
-    switch (action) {
-      case 'open':
-        await chrome.runtime.sendMessage({ 
-          type: 'OPEN_ARTICLE', 
-          payload: { articleId } 
-        });
-        break;
-        
-      case 'favorite':
-        await chrome.runtime.sendMessage({ 
-          type: 'TOGGLE_FAVORITE', 
-          payload: { articleId } 
-        });
-        await loadSavedArticles(); // Refresh
-        break;
-        
-      case 'export':
-        await chrome.runtime.sendMessage({ 
-          type: 'EXPORT_ARTICLE', 
-          payload: { articleId } 
-        });
-        break;
-        
-      case 'delete':
-        if (confirm('Delete this article?')) {
-          await chrome.runtime.sendMessage({ 
-            type: 'DELETE_ARTICLE', 
-            payload: { articleId } 
-          });
-          await loadSavedArticles(); // Refresh
-          await loadArticleCount(); // Update badge
-        }
-        break;
-    }
-  } catch (e) {
-    console.error('[Popup] Article action failed:', e);
-  }
-}
-
-/**
- * Escape HTML for safe rendering
- */
-function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-/**
- * Switch between tabs
- */
-function switchTab(tab: string) {
-  // Update tab buttons
-  tabNav.querySelectorAll('.tab-btn').forEach((btn) => {
-    btn.classList.toggle('active', (btn as HTMLElement).dataset.tab === tab);
-  });
-  
-  // Update tab content
-  remixTab.classList.toggle('active', tab === 'remix');
-  savedTab.classList.toggle('active', tab === 'saved');
-  
-  // Load articles when switching to saved tab
-  if (tab === 'saved') {
-    loadSavedArticles();
   }
 }
 
@@ -439,14 +273,6 @@ function renderRecipeTile(recipe: typeof BUILT_IN_RECIPES[0], isPinned: boolean)
  * Set up event listeners
  */
 function setupEventListeners() {
-  // Tab navigation
-  tabNav.addEventListener('click', (e) => {
-    const btn = (e.target as HTMLElement).closest('.tab-btn') as HTMLElement;
-    if (btn?.dataset.tab) {
-      switchTab(btn.dataset.tab);
-    }
-  });
-  
   // Recipe selection (click on tile, not the pin button)
   elements.recipeList.addEventListener('click', (e) => {
     const target = e.target as HTMLElement;
@@ -468,23 +294,6 @@ function setupEventListeners() {
   
   // Remix button
   elements.remixBtn.addEventListener('click', applyRemix);
-  
-  // Article list clicks
-  articlesList.addEventListener('click', (e) => {
-    const target = e.target as HTMLElement;
-    const articleItem = target.closest('.article-item') as HTMLElement;
-    if (!articleItem) return;
-    
-    const articleId = articleItem.dataset.id!;
-    const actionBtn = target.closest('.article-action-btn') as HTMLElement;
-    
-    if (actionBtn) {
-      handleArticleAction(articleId, actionBtn.dataset.action!);
-    } else {
-      // Click on article row = open it
-      handleArticleAction(articleId, 'open');
-    }
-  });
   
   // Active remixes list - cancel button
   activeRemixesList.addEventListener('click', (e) => {
@@ -509,7 +318,6 @@ function setupEventListeners() {
     if (message.type === 'PROGRESS_UPDATE') {
       // Refresh active remixes display
       loadActiveRemixes();
-      loadArticleCount();
     }
   });
 }
@@ -550,7 +358,6 @@ async function applyRemix() {
     if (response?.success) {
       // Refresh the active remixes list
       await loadActiveRemixes();
-      await loadArticleCount();
       
       // Show explanation if available
       if (response.aiExplanation) {
@@ -574,6 +381,15 @@ async function applyRemix() {
     const errorMsg = String(error).replace('Error: ', '');
     showError(errorMsg);
   }
+}
+
+/**
+ * Escape HTML for safe rendering
+ */
+function escapeHtml(text: string): string {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 /**

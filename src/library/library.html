@@ -47,6 +47,13 @@
         <!-- e.g. "12 articles · 4.2 MB" -->
       </footer>
 
+      <!-- Sync status bar -->
+      <div class="sync-bar" id="syncBar">
+        <span class="sync-bar-icon" id="syncBarIcon">☁️</span>
+        <span class="sync-bar-text" id="syncBarText">Sign in to sync</span>
+        <button class="sync-bar-btn" id="syncBarBtn" title="Sync now">🔄</button>
+      </div>
+
       <!-- Empty state -->
       <div class="sidebar-empty hidden" id="sidebarEmpty">
         <div class="empty-icon">📄</div>
@@ -85,6 +92,9 @@
             </button>
             <button class="action-btn" id="btnOriginal" title="Open original page">
               🔗 <span class="action-label">Original</span>
+            </button>
+            <button class="action-btn" id="btnNewTab" title="Open in new tab">
+              ↗️ <span class="action-label">New Tab</span>
             </button>
             <button class="action-btn" id="btnRespin" title="Respin with different recipe">
               🔄 <span class="action-label">Respin</span>

@@ -1,4 +1,4 @@
-# Transmogrifier - AI Development Guide
+﻿# Transmogrifier - AI Development Guide
 
 ## Project Context
 Transmogrifier is a Microsoft Edge extension (Manifest V3) that transforms web pages into beautiful, focused reading experiences using **AI-powered HTML generation**. It extracts semantic content from pages and uses GPT-5.2 to generate complete, standalone HTML documents.
@@ -6,6 +6,8 @@ Transmogrifier is a Microsoft Edge extension (Manifest V3) that transforms web p
 **Key Features**:
 - Complete HTML generation (not DOM mutation)
 - IndexedDB storage for saved articles
+- Full Library page for browsing, reading, and managing articles
+- OneDrive sync for cross-device article sharing
 - Parallel Transmogrify support with independent progress tracking
 - Optional AI image generation via gpt-image-1.5
 - Dark mode support (`prefers-color-scheme`)
@@ -13,21 +15,28 @@ Transmogrifier is a Microsoft Edge extension (Manifest V3) that transforms web p
 ## Architecture Overview
 
 ```
-Ã¢â€Å’Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â     Ã¢â€Å’Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â     Ã¢â€Å’Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â
-Ã¢â€â€š   Popup UI      Ã¢â€â€šÃ¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€“ÂºÃ¢â€â€š  Service Worker  Ã¢â€â€šÃ¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€“ÂºÃ¢â€â€š Content Script  Ã¢â€â€š
-Ã¢â€â€š  (tabbed UI)    Ã¢â€â€š     Ã¢â€â€š  (orchestrator)  Ã¢â€â€š     Ã¢â€â€š  (extractor)    Ã¢â€â€š
-Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Ëœ     Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Ëœ     Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Ëœ
-                                 Ã¢â€â€š
-              Ã¢â€Å’Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â¼Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â
-              Ã¢â€“Â¼                  Ã¢â€“Â¼                  Ã¢â€“Â¼
-     Ã¢â€Å’Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â  Ã¢â€Å’Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â  Ã¢â€Å’Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â
-     Ã¢â€â€š  Azure OpenAI  Ã¢â€â€š  Ã¢â€â€š  IndexedDB  Ã¢â€â€š  Ã¢â€â€š  Viewer Page   Ã¢â€â€š
-     Ã¢â€â€š GPT-5.2 + img  Ã¢â€â€š  Ã¢â€â€š  (storage)  Ã¢â€â€š  Ã¢â€â€š  (display)     Ã¢â€â€š
-     Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Ëœ  Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Ëœ  Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Ëœ
++------------------+     +------------------+     +------------------+
+|   Popup UI       |---->|  Service Worker   |---->| Content Script   |
+|  (recipe picker) |     |  (orchestrator)   |     |  (extractor)     |
++------------------+     +--------+---------+     +------------------+
+                                  |
+              +-------------------+-------------------+
+              |                   |                   |
+     +--------v--------+ +-------v------+ +----------v-------+
+     |  Azure OpenAI   | |  IndexedDB   | |  Viewer Page     |
+     | GPT-5.2 + img   | |  (storage)   | |  (display)       |
+     +-----------------+ +-------+------+ +------------------+
+                                  |
+              +-------------------+-------------------+
+              |                                       |
+     +--------v--------+                    +---------v--------+
+     |  Library Page   |                    |  OneDrive Sync   |
+     | (article reader)|                    | (Graph API)      |
+     +-----------------+                    +------------------+
 ```
 
 **Flow:**
-1. User selects a recipe and clicks "Transmogrify Ã¢â€ â€™ New Tab"
+1. User selects a recipe and clicks "Transmogrify -> New Tab"
 2. Service worker generates a unique request ID for tracking
 3. Content script extracts semantic content (text, structure, metadata)
 4. Service worker sends content + recipe prompt to GPT-5.2
@@ -35,6 +44,7 @@ Transmogrifier is a Microsoft Edge extension (Manifest V3) that transforms web p
 6. (Optional) Service worker generates images via gpt-image-1.5
 7. Article saved to IndexedDB with original content for respins
 8. Viewer page opens displaying the transmogrified article
+9. (If signed in) Article pushed to OneDrive AppData for cross-device sync
 
 ## Key Files & Responsibilities
 
@@ -44,11 +54,15 @@ Transmogrifier is a Microsoft Edge extension (Manifest V3) that transforms web p
 | `src/content/index.ts` | Content script message handling |
 | `src/shared/ai-service.ts` | Azure OpenAI GPT-5.2 integration |
 | `src/shared/image-service.ts` | Azure OpenAI gpt-image-1.5 integration |
-| `src/shared/storage-service.ts` | IndexedDB article storage |
+| `src/shared/storage-service.ts` | IndexedDB article storage (TransmogrifierDB) |
+| `src/shared/auth-service.ts` | Microsoft OAuth2 PKCE authentication |
+| `src/shared/onedrive-service.ts` | OneDrive Graph API client |
+| `src/shared/sync-service.ts` | Bidirectional sync orchestrator |
 | `src/shared/recipes.ts` | Built-in prompts and response format |
-| `src/popup/popup.ts` | Tabbed UI (Transmogrify + Saved Articles) |
+| `src/popup/popup.ts` | Recipe picker + library link (no tabs) |
+| `src/library/library.ts` | Full two-pane article browser |
 | `src/viewer/viewer.ts` | Article viewer with toolbar |
-| `src/background/service-worker.ts` | Orchestrates Parallel Jobs |
+| `src/background/service-worker.ts` | Orchestrates parallel jobs + sync |
 
 ## Parallel Transmogrify System
 
@@ -75,13 +89,12 @@ AbortControllers stored in memory for cancel support.
 
 Built-in recipes in `recipes.ts`:
 - **Focus** - Clean, distraction-free reading
-- **Reader** - Article-optimized typography
-- **Declutter** - Ultra-lightweight version
-- **Zen** - Minimal, calming aesthetic
-- **Research** - Preserve structure while improving readability
+- **Reader** - Article-optimized editorial typography
+- **Aesthetic** - Bold, artistic presentation
 - **Illustrated** - Add 5-10 AI-generated illustrations
 - **Visualize** - Generate diagrams and infographics
-- **Aesthetic** - Bold, artistic presentation
+- **Declutter** - Ultra-lightweight brutalist version
+- **Interview** - Chat bubble formatting for Q&A
 - **Custom** - User writes their own prompt
 
 All recipes enforce:
@@ -97,7 +110,7 @@ All recipes enforce:
   id: 'myrecipe',
   name: 'My Recipe',
   description: 'What it does',
-  icon: 'Ã°Å¸Å½Â¯',
+  icon: '\uD83C\uDFAF',
   supportsImages: false,  // or true for image-enabled recipes
   systemPrompt: `Instructions for the AI...`,
   userPromptTemplate: `Transform this content:\n\n{CONTENT}`,
@@ -153,7 +166,7 @@ Output is clean text/markdown, not raw HTML.
 
 ## Storage System
 
-Articles stored in IndexedDB via `storage-service.ts`:
+Articles stored in IndexedDB (`TransmogrifierDB`) via `storage-service.ts`:
 
 ```typescript
 interface SavedArticle {
@@ -165,11 +178,51 @@ interface SavedArticle {
   html: string;            // Complete generated HTML
   originalContent: string; // For respin capability
   createdAt: number;
+  updatedAt: number;       // Last modification timestamp
   isFavorite: boolean;
 }
 ```
 
 Storage supports: save, get, getAll, delete, toggleFavorite, export to file.
+
+## Library
+
+The Library (`src/library/`) is a full-page article browser opened from the popup:
+- **Two-pane layout**: Sidebar (article list) + reading pane (sandboxed iframe)
+- **Search**: Full-text search across article titles
+- **Filters**: By recipe, favorites only
+- **Sort**: Newest, oldest, alphabetical
+- **Article actions**: Favorite, Save/Export, Original link, New Tab, Respin, Delete
+- **Respin modal**: Pick new recipe + optional custom prompt to re-transform
+- **New Tab**: Opens article as a standalone blob URL page
+- **Keyboard navigation**: Arrow keys, Enter, / to focus search
+- **Resizable sidebar**: Drag handle between panes
+- **Sync bar**: Sign-in status, manual sync button
+
+## OneDrive Sync
+
+Cross-device article sync via Microsoft Graph API:
+
+### Architecture
+- **`auth-service.ts`**: OAuth2 PKCE flow via `chrome.identity.launchWebAuthFlow`
+  - Azure client ID: `4b54bcee-1c83-4f52-9faf-d0dfd89c5ac2`
+  - Scopes: `Files.ReadWrite.AppFolder`, `User.Read`, `offline_access`
+  - Token stored in `chrome.storage.local`, auto-refresh on expiry
+- **`onedrive-service.ts`**: Graph API client
+  - Stores articles as JSON files in OneDrive AppData special folder
+  - Delta queries for efficient change detection
+- **`sync-service.ts`**: Bidirectional sync orchestrator
+  - Push: On article save, respin, delete, or favorite toggle
+  - Pull: On extension install, every 15 minutes via `chrome.alarms`, or manual trigger
+  - Conflict resolution: Latest `updatedAt` wins
+
+### Sync Flow
+1. User clicks sign-in text in Library sync bar
+2. `SYNC_SIGN_IN` message sent to service worker
+3. Service worker initiates PKCE auth flow via `chrome.identity`
+4. On success, initial pull syncs all remote articles
+5. Subsequent saves/deletes automatically push to OneDrive
+6. Alarm fires every 15 minutes for periodic pull
 
 ## Environment Configuration
 
@@ -200,6 +253,8 @@ VITE_AZURE_IMAGE_API_VERSION=2024-10-21
 - Generated HTML displayed in sandboxed iframe
 - No external resources loaded from generated HTML
 - Images stored as embedded base64 data URLs
+- OAuth2 PKCE flow (no client secret required)
+- OneDrive AppData folder is app-private
 
 ## Testing Checklist
 - [ ] Test recipes on news sites, blogs, documentation
@@ -212,6 +267,13 @@ VITE_AZURE_IMAGE_API_VERSION=2024-10-21
 - [ ] Verify anchor links work in viewer
 - [ ] Test image generation with Illustrated recipe
 - [ ] Test with API errors/timeouts
+- [ ] Test Library search, filter, sort
+- [ ] Test Library keyboard navigation
+- [ ] Test New Tab view from Library
+- [ ] Test OneDrive sign-in/sign-out
+- [ ] Test sync push (save, delete, favorite)
+- [ ] Test sync pull (periodic and manual)
+- [ ] Test sync conflict resolution
 
 ## Future Ideas
 - [ ] Queue system for many Parallel Jobs
@@ -219,4 +281,3 @@ VITE_AZURE_IMAGE_API_VERSION=2024-10-21
 - [ ] Site-specific recipe presets
 - [ ] Streaming AI responses for faster feedback
 - [ ] Image caching to avoid regeneration
-- [ ] Sync articles across devices

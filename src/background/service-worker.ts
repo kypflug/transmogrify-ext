@@ -19,6 +19,16 @@ import {
   exportArticleToFile,
   getStorageStats
 } from '../shared/storage-service';
+import { signIn, signOut, isSignedIn, getUserInfo } from '../shared/auth-service';
+import {
+  pushArticleToCloud,
+  pushDeleteToCloud,
+  pushMetaUpdateToCloud,
+  pullFromCloud,
+  downloadCloudArticle,
+  getSyncState,
+  setupSyncAlarm,
+} from '../shared/sync-service';
 
 // In-memory storage for AbortControllers (per request)
 const abortControllers = new Map<string, AbortController>();
@@ -199,6 +209,9 @@ chrome.runtime.onInstalled.addListener((details) => {
   // Clear any stale remixes on install/update
   chrome.storage.local.set({ activeRemixes: {} });
   chrome.action.setBadgeText({ text: '' });
+
+  // Set up periodic sync alarm
+  setupSyncAlarm();
 });
 
 // Handle messages from popup and content scripts
@@ -321,7 +334,9 @@ async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
 
     case 'DELETE_ARTICLE': {
       try {
-        await deleteArticle(message.payload?.articleId || '');
+        const delId = message.payload?.articleId || '';
+        await deleteArticle(delId);
+        pushDeleteToCloud(delId).catch(() => {});
         return { success: true };
       } catch (error) {
         return { success: false, error: String(error) };
@@ -330,7 +345,10 @@ async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
 
     case 'TOGGLE_FAVORITE': {
       try {
-        const isFavorite = await toggleFavorite(message.payload?.articleId || '');
+        const favId = message.payload?.articleId || '';
+        const isFavorite = await toggleFavorite(favId);
+        // Push meta update to cloud in background
+        getArticle(favId).then(a => { if (a) pushMetaUpdateToCloud(a).catch(() => {}); });
         return { success: true, isFavorite };
       } catch (error) {
         return { success: false, error: String(error) };
@@ -384,6 +402,100 @@ async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
         return { success: true };
       }
       return { success: false, error: 'No settings provided' };
+    }
+
+    // ─── Sync Messages ─────────────────────────────
+
+    case 'SYNC_SIGN_IN': {
+      try {
+        await signIn();
+        // Do an initial pull after sign-in
+        pullFromCloud().catch(err => console.error('[Sync] Initial pull failed:', err));
+        const userInfo = await getUserInfo();
+        const syncState = await getSyncState();
+        return {
+          success: true,
+          syncStatus: {
+            signedIn: true,
+            userName: userInfo?.name,
+            userEmail: userInfo?.email,
+            lastSyncTime: syncState.lastSyncTime,
+            isSyncing: syncState.isSyncing,
+          },
+        };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    }
+
+    case 'SYNC_SIGN_OUT': {
+      try {
+        await signOut();
+        return {
+          success: true,
+          syncStatus: {
+            signedIn: false,
+            lastSyncTime: 0,
+            isSyncing: false,
+          },
+        };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    }
+
+    case 'SYNC_STATUS': {
+      try {
+        const signedIn = await isSignedIn();
+        const userInfo = signedIn ? await getUserInfo() : null;
+        const syncState = await getSyncState();
+        return {
+          success: true,
+          syncStatus: {
+            signedIn,
+            userName: userInfo?.name,
+            userEmail: userInfo?.email,
+            lastSyncTime: syncState.lastSyncTime,
+            isSyncing: syncState.isSyncing,
+            lastError: syncState.lastError,
+          },
+        };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    }
+
+    case 'SYNC_NOW': {
+      try {
+        const result = await pullFromCloud();
+        const syncState = await getSyncState();
+        const userInfo = await getUserInfo();
+        return {
+          success: true,
+          syncStatus: {
+            signedIn: true,
+            userName: userInfo?.name,
+            userEmail: userInfo?.email,
+            lastSyncTime: syncState.lastSyncTime,
+            isSyncing: false,
+            lastError: syncState.lastError,
+          },
+          stats: { count: result.pulled, totalSize: result.deleted },
+        };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    }
+
+    case 'SYNC_DOWNLOAD_ARTICLE': {
+      try {
+        const articleId = message.payload?.articleId;
+        if (!articleId) return { success: false, error: 'No article ID' };
+        const article = await downloadCloudArticle(articleId);
+        return { success: true, article: article || undefined };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
     }
 
     default:
@@ -545,6 +657,9 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
     
     console.log('[Transmogrifier] Article saved:', savedArticle.id);
     
+    // Push to cloud in background (non-blocking)
+    pushArticleToCloud(savedArticle).catch(() => {});
+    
     // Open the viewer page
     const viewerUrl = chrome.runtime.getURL(`src/viewer/viewer.html?id=${savedArticle.id}`);
     await chrome.tabs.create({ url: viewerUrl, active: true });
@@ -698,6 +813,9 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
     html: finalHtml,
     originalContent: originalArticle.originalContent,
   });
+
+  // Push to cloud in background
+  pushArticleToCloud(newArticle).catch(() => {});
   
   await updateRemixProgress(requestId, { 
     status: 'complete', 
