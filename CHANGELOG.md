@@ -2,6 +2,13 @@
 
 All notable changes to Transmogrifier will be documented in this file.
 
+## [0.4.1] - 2026-02-06
+
+### Fixed
+- Extension badge text now uses ASCII labels (`AI`, `IMG`, `OK`, etc.) instead of emoji that rendered as corrupted glyphs
+- Improved content extraction to filter out more site UI debris (topic/follow widgets, digest prompts, ARIA-role navigation elements)
+- AI prompt updated to discard obvious website chrome (nav links, "Follow" buttons, "See All" links, etc.) from generated output
+
 ## [0.4.0] - 2025-07-08
 
 ### Added

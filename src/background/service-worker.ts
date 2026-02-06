@@ -115,7 +115,7 @@ async function updateBadge(remixes: Record<string, RemixRequest>) {
     // Check if any recently completed
     const recentComplete = activeList.some(r => r.status === 'complete');
     if (recentComplete) {
-      await chrome.action.setBadgeText({ text: 'Ã¢Å“â€œ' });
+      await chrome.action.setBadgeText({ text: 'OK' });
       await chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' });
     } else if (hasError) {
       await chrome.action.setBadgeText({ text: '!' });
@@ -124,14 +124,14 @@ async function updateBadge(remixes: Record<string, RemixRequest>) {
       await chrome.action.setBadgeText({ text: '' });
     }
   } else if (inProgress.length === 1) {
-    // Single active - show status emoji
-    const statusEmoji: Record<string, string> = {
-      'extracting': 'Ã°Å¸â€œâ€ž',
-      'analyzing': 'Ã°Å¸Â¤â€“',
-      'generating-images': 'Ã°Å¸Å½Â¨',
-      'saving': 'Ã°Å¸â€™Â¾',
+    // Single active - show short status label (badge only supports ~4 ASCII chars)
+    const statusLabel: Record<string, string> = {
+      'extracting': '...',
+      'analyzing': 'AI',
+      'generating-images': 'IMG',
+      'saving': 'SAVE',
     };
-    await chrome.action.setBadgeText({ text: statusEmoji[inProgress[0].status] || 'Ã¢ÂÂ³' });
+    await chrome.action.setBadgeText({ text: statusLabel[inProgress[0].status] || '...' });
     await chrome.action.setBadgeBackgroundColor({ color: '#9C27B0' });
   } else {
     // Multiple active - show count

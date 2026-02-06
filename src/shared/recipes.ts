@@ -126,7 +126,8 @@ HTML REQUIREMENTS:
 - Make it fully responsive with mobile-first CSS
 - Use modern CSS (flexbox, grid, custom properties, clamp())
 - Include a viewport meta tag
-- Preserve ALL content from the source - don't summarize or truncate
+- Preserve ALL substantive content from the source - don't summarize or truncate
+- DISCARD any obvious website UI debris that leaked into the extracted content: navigation links, "Follow" buttons, topic tags, "See All" links, cookie/newsletter prompts, "Close" labels, share widgets, subscription CTAs, ad text, and repetitive boilerplate. Use your judgement - if it's clearly site chrome and not article content, omit it.
 - Convert markdown-style links [text](url) to proper <a> tags
 - For images, use the provided src URLs directly
 
@@ -205,7 +206,8 @@ HTML REQUIREMENTS:
 - Use semantic HTML5 elements
 - Make it fully responsive with mobile-first CSS
 - Use modern CSS (flexbox, grid, custom properties, clamp())
-- Preserve ALL content from the source
+- Preserve ALL substantive content from the source
+- DISCARD any obvious website UI debris that leaked into the extracted content: navigation links, "Follow" buttons, topic tags, "See All" links, cookie/newsletter prompts, "Close" labels, share widgets, subscription CTAs, ad text, and repetitive boilerplate. Use your judgement - if it's clearly site chrome and not article content, omit it.
 - For AI-generated images, use placeholder: <img src="{{IMAGE_ID}}" alt="...">
 - For original images from the source, keep their original URLs
 

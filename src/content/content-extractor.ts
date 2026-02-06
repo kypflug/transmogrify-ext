@@ -219,7 +219,12 @@ function isHiddenOrSkipped(el: HTMLElement): boolean {
   // Skip common ad/social/nav patterns
   const className = el.className?.toLowerCase() || '';
   const id = el.id?.toLowerCase() || '';
-  const skipPatterns = ['sidebar', 'comment', 'share', 'social', 'related', 'recommend', 'promo', 'ad-', 'ads-', 'advertisement', 'newsletter', 'subscribe', 'popup', 'modal', 'cookie', 'gdpr', 'nav', 'menu', 'footer', 'header'];
+  const skipPatterns = ['sidebar', 'comment', 'share', 'social', 'related', 'recommend', 'promo', 'ad-', 'ads-', 'advertisement', 'newsletter', 'subscribe', 'popup', 'modal', 'cookie', 'gdpr', 'nav', 'menu', 'footer', 'header', 'topic', 'follow', 'digest', 'trending', 'signup', 'sign-up', 'cta', 'banner', 'widget', 'toolbar', 'drawer', 'toast', 'snackbar', 'overlay'];
+
+  // Skip elements with ARIA roles that indicate non-content
+  const role = el.getAttribute('role')?.toLowerCase() || '';
+  const skipRoles = ['navigation', 'banner', 'complementary', 'contentinfo', 'dialog', 'alertdialog', 'toolbar', 'menu', 'menubar'];
+  if (skipRoles.includes(role)) return true;
   
   for (const pattern of skipPatterns) {
     if (className.includes(pattern) || id.includes(pattern)) return true;
