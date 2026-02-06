@@ -228,7 +228,6 @@ async function selectArticle(id: string) {
     readingArticle.classList.remove('hidden');
 
     readingTitle.textContent = currentArticle.title;
-    document.title = `${currentArticle.title} — Transmogrifier Library`;
 
     const domain = getDomain(currentArticle.originalUrl);
     const recipe = BUILT_IN_RECIPES.find(r => r.id === currentArticle!.recipeId);
@@ -265,7 +264,7 @@ function clearSelection() {
   focusedIndex = -1;
   readingEmpty.classList.remove('hidden');
   readingArticle.classList.add('hidden');
-  document.title = 'Transmogrifier Library';
+  document.title = 'Transmogrifications';
 
   articleList.querySelectorAll('.article-item').forEach(el => {
     el.classList.remove('active');
