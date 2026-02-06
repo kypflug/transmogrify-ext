@@ -1,8 +1,8 @@
 /**
- * Focus Remix - Popup Script
- * Handles the extension popup UI for AI-powered remixing
- * With tabbed interface for Remix and Saved Articles
- * Supports parallel remix operations
+ * Transmogrifier - Popup Script
+ * Handles the extension popup UI for AI-powered transmogrification
+ * With tabbed interface for Transmogrify and Saved Articles
+ * Supports parallel transmogrify operations
  */
 
 import { RemixMessage, RemixRequest } from '../shared/types';
@@ -22,6 +22,14 @@ const articleCount = document.getElementById('articleCount')!;
 const articlesList = document.getElementById('articlesList')!;
 const emptyState = document.getElementById('emptyState')!;
 const storageInfo = document.getElementById('storageInfo')!;
+const openLibraryBtn = document.getElementById('openLibraryBtn')!;
+
+// Open library button
+openLibraryBtn.addEventListener('click', () => {
+  const url = chrome.runtime.getURL('src/library/library.html');
+  chrome.tabs.create({ url });
+  window.close();
+});
 
 // DOM Elements - Active Remixes
 const activeRemixesSection = document.getElementById('activeRemixesSection')!;
@@ -195,7 +203,7 @@ async function loadActiveRemixes() {
             <div class="active-remix-status">${remix.step}${elapsedStr}</div>
             ${hasWarning ? `<div class="active-remix-warning">⚠ ${escapeHtml(remix.warning!)}</div>` : ''}
           </div>
-          ${showCancel ? `<button class="active-remix-cancel" data-action="cancel" title="Cancel this remix">✕</button>` : ''}
+          ${showCancel ? `<button class="active-remix-cancel" data-action="cancel" title="Cancel">✕</button>` : ''}
         </div>
       `;
     }).join('');

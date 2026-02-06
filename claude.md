@@ -1,40 +1,40 @@
-# Focus Remix - AI Development Guide
+# Transmogrifier - AI Development Guide
 
 ## Project Context
-Focus Remix is a Microsoft Edge extension (Manifest V3) that transforms web pages into beautiful, focused reading experiences using **AI-powered HTML generation**. It extracts semantic content from pages and uses GPT-5.2 to generate complete, standalone HTML documents.
+Transmogrifier is a Microsoft Edge extension (Manifest V3) that transforms web pages into beautiful, focused reading experiences using **AI-powered HTML generation**. It extracts semantic content from pages and uses GPT-5.2 to generate complete, standalone HTML documents.
 
 **Key Features**:
 - Complete HTML generation (not DOM mutation)
 - IndexedDB storage for saved articles
-- Parallel remix support with independent progress tracking
+- Parallel Transmogrify support with independent progress tracking
 - Optional AI image generation via gpt-image-1.5
 - Dark mode support (`prefers-color-scheme`)
 
 ## Architecture Overview
 
 ```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│   Popup UI      │────►│  Service Worker  │────►│ Content Script  │
-│  (tabbed UI)    │     │  (orchestrator)  │     │  (extractor)    │
-└─────────────────┘     └────────┬─────────┘     └─────────────────┘
-                                 │
-              ┌──────────────────┼──────────────────┐
-              ▼                  ▼                  ▼
-     ┌────────────────┐  ┌─────────────┐  ┌────────────────┐
-     │  Azure OpenAI  │  │  IndexedDB  │  │  Viewer Page   │
-     │ GPT-5.2 + img  │  │  (storage)  │  │  (display)     │
-     └────────────────┘  └─────────────┘  └────────────────┘
+Ã¢â€Å’Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â     Ã¢â€Å’Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â     Ã¢â€Å’Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â
+Ã¢â€â€š   Popup UI      Ã¢â€â€šÃ¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€“ÂºÃ¢â€â€š  Service Worker  Ã¢â€â€šÃ¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€“ÂºÃ¢â€â€š Content Script  Ã¢â€â€š
+Ã¢â€â€š  (tabbed UI)    Ã¢â€â€š     Ã¢â€â€š  (orchestrator)  Ã¢â€â€š     Ã¢â€â€š  (extractor)    Ã¢â€â€š
+Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Ëœ     Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Ëœ     Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Ëœ
+                                 Ã¢â€â€š
+              Ã¢â€Å’Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â¼Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â
+              Ã¢â€“Â¼                  Ã¢â€“Â¼                  Ã¢â€“Â¼
+     Ã¢â€Å’Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â  Ã¢â€Å’Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â  Ã¢â€Å’Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â
+     Ã¢â€â€š  Azure OpenAI  Ã¢â€â€š  Ã¢â€â€š  IndexedDB  Ã¢â€â€š  Ã¢â€â€š  Viewer Page   Ã¢â€â€š
+     Ã¢â€â€š GPT-5.2 + img  Ã¢â€â€š  Ã¢â€â€š  (storage)  Ã¢â€â€š  Ã¢â€â€š  (display)     Ã¢â€â€š
+     Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Ëœ  Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Ëœ  Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Ëœ
 ```
 
 **Flow:**
-1. User selects a recipe and clicks "Remix → New Tab"
+1. User selects a recipe and clicks "Transmogrify Ã¢â€ â€™ New Tab"
 2. Service worker generates a unique request ID for tracking
 3. Content script extracts semantic content (text, structure, metadata)
 4. Service worker sends content + recipe prompt to GPT-5.2
 5. AI returns complete HTML document as JSON
 6. (Optional) Service worker generates images via gpt-image-1.5
 7. Article saved to IndexedDB with original content for respins
-8. Viewer page opens displaying the remixed article
+8. Viewer page opens displaying the transmogrified article
 
 ## Key Files & Responsibilities
 
@@ -46,13 +46,13 @@ Focus Remix is a Microsoft Edge extension (Manifest V3) that transforms web page
 | `src/shared/image-service.ts` | Azure OpenAI gpt-image-1.5 integration |
 | `src/shared/storage-service.ts` | IndexedDB article storage |
 | `src/shared/recipes.ts` | Built-in prompts and response format |
-| `src/popup/popup.ts` | Tabbed UI (Remix + Saved Articles) |
+| `src/popup/popup.ts` | Tabbed UI (Transmogrify + Saved Articles) |
 | `src/viewer/viewer.ts` | Article viewer with toolbar |
-| `src/background/service-worker.ts` | Orchestrates parallel remixes |
+| `src/background/service-worker.ts` | Orchestrates Parallel Jobs |
 
-## Parallel Remix System
+## Parallel Transmogrify System
 
-Each remix gets a unique `requestId` for independent tracking:
+Each Transmogrify gets a unique `requestId` for independent tracking:
 
 ```typescript
 interface RemixRequest {
@@ -68,7 +68,7 @@ interface RemixRequest {
 }
 ```
 
-Active remixes stored in `chrome.storage.local` as `activeRemixes` map.
+Active Jobs stored in `chrome.storage.local` as `activeRemixes` map.
 AbortControllers stored in memory for cancel support.
 
 ## Recipe System
@@ -97,7 +97,7 @@ All recipes enforce:
   id: 'myrecipe',
   name: 'My Recipe',
   description: 'What it does',
-  icon: '🎯',
+  icon: 'Ã°Å¸Å½Â¯',
   supportsImages: false,  // or true for image-enabled recipes
   systemPrompt: `Instructions for the AI...`,
   userPromptTemplate: `Transform this content:\n\n{CONTENT}`,
@@ -204,7 +204,7 @@ VITE_AZURE_IMAGE_API_VERSION=2024-10-21
 ## Testing Checklist
 - [ ] Test recipes on news sites, blogs, documentation
 - [ ] Verify dark mode works correctly
-- [ ] Test parallel remixes (start 2-3 simultaneously)
+- [ ] Test Parallel Jobs (start 2-3 simultaneously)
 - [ ] Test cancel functionality
 - [ ] Verify saved articles persist across sessions
 - [ ] Test respin with different recipes
@@ -214,8 +214,8 @@ VITE_AZURE_IMAGE_API_VERSION=2024-10-21
 - [ ] Test with API errors/timeouts
 
 ## Future Ideas
-- [ ] Queue system for many parallel remixes
-- [ ] Browser notifications when remix completes
+- [ ] Queue system for many Parallel Jobs
+- [ ] Browser notifications when Transmogrify completes
 - [ ] Site-specific recipe presets
 - [ ] Streaming AI responses for faster feedback
 - [ ] Image caching to avoid regeneration

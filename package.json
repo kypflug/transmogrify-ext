@@ -1,7 +1,7 @@
 {
-  "name": "focus-remix-extension",
+  "name": "transmogrifier-extension",
   "version": "0.1.0",
-  "description": "Microsoft Edge extension that remixes web pages for better focus and readability",
+  "description": "Microsoft Edge extension that transmogrifies web pages for better focus and readability",
   "type": "module",
   "scripts": {
     "dev": "vite build --watch",

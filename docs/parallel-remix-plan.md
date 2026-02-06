@@ -1,17 +1,17 @@
-# Parallel Remix Implementation Plan
+# Parallel Transmogrify Implementation Plan
 
 ## Problem
-Currently, the extension uses a single shared progress state, making it impossible to track multiple concurrent remix operations across different tabs.
+Currently, the extension uses a single shared progress state, making it impossible to track multiple concurrent Transmogrify operations across different tabs.
 
 ## Goal
-Allow users to start remixes on multiple tabs simultaneously, each with independent progress tracking.
+Allow users to start transmogrifications on multiple tabs simultaneously, each with independent progress tracking.
 
 ---
 
 ## Architecture Changes
 
 ### 1. Request ID System
-Each remix operation gets a unique ID that travels with it through the entire flow.
+Each Transmogrify operation gets a unique ID that travels with it through the entire flow.
 
 ```typescript
 interface RemixRequest {
@@ -42,7 +42,7 @@ Replace single `remixProgress` with a map of active requests:
 ### 3. Badge Strategy Options
 
 **Option A: Show count**
-- Badge shows number of active remixes: "2", "3", etc.
+- Badge shows number of Active Jobs: "2", "3", etc.
 - Color indicates if any have errors (red) or all good (purple)
 
 **Option B: Rotating display**
@@ -60,26 +60,26 @@ Replace single `remixProgress` with a map of active requests:
 Current popup shows single progress bar. New design:
 
 ```
-┌─────────────────────────────────────┐
-│  Focus Remix                    [⚙] │
-├─────────────────────────────────────┤
-│  Active Remixes (2)                 │
-│  ┌────────────────────────────────┐ │
-│  │ 🤖 Blog Post Title...          │ │
-│  │    AI generating HTML (45s)    │ │
-│  │    [Cancel]                    │ │
-│  └────────────────────────────────┘ │
-│  ┌────────────────────────────────┐ │
-│  │ 🎨 Another Article             │ │
-│  │    Generating 5 images...      │ │
-│  │    [Cancel]                    │ │
-│  └────────────────────────────────┘ │
-├─────────────────────────────────────┤
-│  [Remix This Page ▼]                │
-├─────────────────────────────────────┤
-│  📚 Saved Articles                  │
-│  ...                                │
-└─────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  Transmogrify                    [âš™] â”‚
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+â”‚  Active Jobs (2)                 â”‚
+â”‚  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â” â”‚
+â”‚  â”‚ ðŸ¤– Blog Post Title...          â”‚ â”‚
+â”‚  â”‚    AI generating HTML (45s)    â”‚ â”‚
+â”‚  â”‚    [Cancel]                    â”‚ â”‚
+â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜ â”‚
+â”‚  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â” â”‚
+â”‚  â”‚ ðŸŽ¨ Another Article             â”‚ â”‚
+â”‚  â”‚    Generating 5 images...      â”‚ â”‚
+â”‚  â”‚    [Cancel]                    â”‚ â”‚
+â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜ â”‚
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+â”‚  [Transmogrify This Page â–¼]                â”‚
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+â”‚  ðŸ“š Saved Articles                  â”‚
+â”‚  ...                                â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 ### 5. Cancel Support
@@ -98,8 +98,8 @@ With request IDs, we can implement cancel:
 1. Add `RemixRequest` interface to types
 2. Generate UUID at start of `performRemix()` / `performRespin()`
 3. Store requests in `activeRemixes` map instead of single `remixProgress`
-4. Update `getProgress()` → `getActiveRemixes()`
-5. Update `updateProgress()` → `updateRemixProgress(requestId, ...)`
+4. Update `getProgress()` â†’ `getActiveRemixes()`
+5. Update `updateProgress()` â†’ `updateRemixProgress(requestId, ...)`
 6. Clean up completed/errored requests after 10 seconds
 
 ### Phase 2: Message Protocol Update
@@ -113,16 +113,16 @@ With request IDs, we can implement cancel:
 ### Phase 3: Popup UI Update
 **Files**: `popup.ts`, `popup.css`, `popup.html`
 
-1. Replace single progress section with "Active Remixes" list
-2. Each active remix shows: title, recipe icon, status, elapsed time
+1. Replace single progress section with "Active Jobs" list
+2. Each active Transmogrify shows: title, recipe icon, status, elapsed time
 3. Add cancel button per remix
-4. Collapse section when no active remixes
+4. Collapse section when no Active Jobs
 5. Poll for updates or listen to messages
 
 ### Phase 4: Badge Update
 **Files**: `service-worker.ts`
 
-1. New `updateBadge()` function that reads all active remixes
+1. New `updateBadge()` function that reads all Active Jobs
 2. Show count when multiple active
 3. Show checkmark briefly on any completion
 4. Clear when all done
@@ -141,19 +141,19 @@ With request IDs, we can implement cancel:
 
 ```
 Popup                    Service Worker              AI Service
-  │                            │                          │
-  ├─ AI_ANALYZE ──────────────►│                          │
-  │                            ├─ generate requestId      │
-  │                            ├─ store in activeRemixes  │
-  │◄─ {requestId} ─────────────┤                          │
-  │                            ├─ analyzeWithAI() ───────►│
-  │                            │                          │
-  │◄─ PROGRESS_UPDATE {id} ────┤ (periodic)               │
-  │                            │                          │
-  │                            │◄─ response ──────────────┤
-  │                            ├─ save article            │
-  │◄─ PROGRESS_UPDATE {id} ────┤ (complete)               │
-  │                            ├─ cleanup after delay     │
+  â”‚                            â”‚                          â”‚
+  â”œâ”€ AI_ANALYZE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â–ºâ”‚                          â”‚
+  â”‚                            â”œâ”€ generate requestId      â”‚
+  â”‚                            â”œâ”€ store in activeRemixes  â”‚
+  â”‚â—„â”€ {requestId} â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤                          â”‚
+  â”‚                            â”œâ”€ analyzeWithAI() â”€â”€â”€â”€â”€â”€â”€â–ºâ”‚
+  â”‚                            â”‚                          â”‚
+  â”‚â—„â”€ PROGRESS_UPDATE {id} â”€â”€â”€â”€â”¤ (periodic)               â”‚
+  â”‚                            â”‚                          â”‚
+  â”‚                            â”‚â—„â”€ response â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+  â”‚                            â”œâ”€ save article            â”‚
+  â”‚â—„â”€ PROGRESS_UPDATE {id} â”€â”€â”€â”€â”¤ (complete)               â”‚
+  â”‚                            â”œâ”€ cleanup after delay     â”‚
 ```
 
 ---
@@ -163,8 +163,8 @@ Popup                    Service Worker              AI Service
 | Risk | Mitigation |
 |------|------------|
 | Memory leak from uncleaned requests | Auto-cleanup completed requests after 10s; cleanup on extension restart |
-| Too many concurrent API calls | Optional: limit to 3-5 concurrent remixes |
-| Popup closes during multi-remix | Already handled - progress in storage survives |
+| Too many concurrent API calls | Optional: limit to 3-5 concurrent jobs |
+| Popup closes during multi-Transmogrify | Already handled - progress in storage survives |
 | Badge flicker with many updates | Debounce badge updates to max 1/second |
 
 ---
@@ -186,5 +186,5 @@ Popup                    Service Worker              AI Service
 
 - **Queue system**: If user starts 10 remixes, queue them and run 3 at a time
 - **Priority**: Let user reorder queue
-- **Retry**: Auto-retry failed remixes with exponential backoff
-- **Notifications**: Browser notification when remix completes (if popup closed)
+- **Retry**: Auto-retry failed jobs with exponential backoff
+- **Notifications**: Browser notification when Transmogrify completes (if popup closed)

@@ -1,20 +1,20 @@
 {
   "manifest_version": 3,
-  "name": "Focus Remix",
+  "name": "Transmogrifier",
   "version": "0.1.0",
-  "description": "Remix web pages for better focus and readability - your super duper reading mode",
+  "description": "Transmogrify web pages for better focus and readability - your super duper reading mode",
   "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
+    "16": "icons/transmogrify16.png",
+    "48": "icons/transmogrify48.png",
+    "128": "icons/transmogrify128.png"
   },
   "action": {
     "default_popup": "src/popup/popup.html",
     "default_icon": {
-      "16": "icons/icon16.png",
-      "48": "icons/icon48.png"
+      "16": "icons/transmogrify16.png",
+      "48": "icons/transmogrify48.png"
     },
-    "default_title": "Focus Remix"
+    "default_title": "Transmogrifier"
   },
   "background": {
     "service_worker": "src/background/service-worker.ts",
@@ -38,7 +38,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["src/viewer/viewer.html"],
+      "resources": ["src/viewer/viewer.html", "src/library/library.html"],
       "matches": ["<all_urls>"]
     }
   ]

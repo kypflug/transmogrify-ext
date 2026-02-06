@@ -12,6 +12,7 @@ export default defineConfig({
       input: {
         popup: 'src/popup/popup.html',
         viewer: 'src/viewer/viewer.html',
+        library: 'src/library/library.html',
       },
     },
   },

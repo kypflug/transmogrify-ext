@@ -126,7 +126,7 @@ function extractMainContent(): ContentBlock[] {
   // Try to find main content container
   const mainElement = findMainContent();
   if (!mainElement) {
-    console.warn('[Focus Remix] Could not find main content');
+    console.warn('[Transmogrifier] Could not find main content');
     return blocks;
   }
 
@@ -533,7 +533,7 @@ export function serializeContent(content: ExtractedContent): string {
   }
 
   if (content.author || content.publishDate) {
-    const meta = [content.author, content.publishDate].filter(Boolean).join(' • ');
+    const meta = [content.author, content.publishDate].filter(Boolean).join(' Ã¢â‚¬Â¢ ');
     lines.push(`*${meta}*`, '');
   }
 

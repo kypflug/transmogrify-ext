@@ -33,7 +33,7 @@ export interface AIResponse {
 }
 
 const SAVE_BUTTON_SCRIPT = `
-<!-- Focus Remix Save Button -->
+<!-- Transmogrify Save Button -->
 <style>
   .remix-save-fab {
     position: fixed;
@@ -90,7 +90,7 @@ const SAVE_BUTTON_SCRIPT = `
   document.getElementById('remixSaveFab').addEventListener('click', function() {
     // Send message to parent (viewer page) to trigger export
     if (window.parent !== window) {
-      window.parent.postMessage({ type: 'FOCUS_REMIX_SAVE' }, '*');
+      window.parent.postMessage({ type: 'TRANSMOGRIFY_SAVE' }, '*');
       this.innerHTML = '✓';
       this.classList.add('saved');
       setTimeout(() => {
@@ -104,7 +104,7 @@ const SAVE_BUTTON_SCRIPT = `
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'remixed-page.html';
+      a.download = 'transmogrified-page.html';
       a.click();
       URL.revokeObjectURL(url);
     }

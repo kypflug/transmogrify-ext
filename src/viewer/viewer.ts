@@ -1,5 +1,5 @@
 /**
- * Focus Remix - Article Viewer
+ * Transmogrifier - Article Viewer
  * Displays saved articles from IndexedDB with respin capability
  */
 
@@ -50,7 +50,7 @@ async function init() {
     }
 
     // Update UI
-    document.title = `${currentArticle.title} - Focus Remix`;
+    document.title = `${currentArticle.title} - Transmogrifier`;
     articleTitle.textContent = currentArticle.title;
     favoriteIcon.textContent = currentArticle.isFavorite ? '★' : '☆';
 
@@ -188,7 +188,7 @@ function setupEventListeners() {
 
   // Listen for messages from the iframe (save button in generated HTML)
   window.addEventListener('message', async (event) => {
-    if (event.data?.type === 'FOCUS_REMIX_SAVE') {
+    if (event.data?.type === 'TRANSMOGRIFY_SAVE') {
       if (!currentArticle) return;
       try {
         await exportArticleToFile(currentArticle.id);

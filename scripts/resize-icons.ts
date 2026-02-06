@@ -10,7 +10,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 
 const SIZES = [16, 48, 128];
-const INPUT_FILE = path.join(process.cwd(), 'public', 'icons', 'icon-generated.png');
+const INPUT_FILE = path.join(process.cwd(), 'public', 'icons', 'transmogrify-full.png');
 const OUTPUT_DIR = path.join(process.cwd(), 'public', 'icons');
 
 async function resizeIcons(): Promise<void> {
@@ -38,7 +38,7 @@ async function resizeIcons(): Promise<void> {
 
   // Now resize from the trimmed image
   for (const size of SIZES) {
-    const outputFile = path.join(OUTPUT_DIR, `icon${size}.png`);
+    const outputFile = path.join(OUTPUT_DIR, `transmogrify${size}.png`);
     
     // Add a small padding (10%) so the icon doesn't touch edges
     const padding = Math.round(size * 0.1);
@@ -62,7 +62,7 @@ async function resizeIcons(): Promise<void> {
       })
       .toFile(outputFile);
     
-    console.log(`✅ Created icon${size}.png (${size}x${size})`);
+    console.log(`✅ Created transmogrify${size}.png (${size}x${size})`);
   }
 
   console.log('\n🎉 All icons created successfully!');

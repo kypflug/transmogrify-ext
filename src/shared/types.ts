@@ -1,5 +1,5 @@
 /**
- * Shared types for Focus Remix extension
+ * Shared types for Transmogrifier extension
  */
 
 import { AIResponse } from './recipes';

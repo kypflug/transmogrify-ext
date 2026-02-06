@@ -1,4 +1,4 @@
-/* Focus Remix - Popup Styles
+/* Transmogrifier - Popup Styles
  * Edge-native design language: blues, teals, clean surfaces
  * Inspired by Edge sidebar panels and Fluent Design
  */
@@ -745,6 +745,28 @@ body {
 .storage-info {
   font-size: 11px;
   color: var(--edge-text-tertiary);
+}
+
+.saved-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.library-btn {
+  background: none;
+  border: 1px solid var(--edge-border);
+  border-radius: var(--edge-radius);
+  padding: 4px 8px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.15s;
+  line-height: 1;
+}
+
+.library-btn:hover {
+  background: var(--edge-blue-light);
+  border-color: var(--edge-blue);
 }
 
 .articles-list {

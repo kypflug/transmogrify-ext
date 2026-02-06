@@ -1,6 +1,6 @@
 /**
- * Focus Remix - Content Script Entry Point
- * Injected into all web pages to enable AI-powered page remixing
+ * Transmogrifier - Content Script Entry Point
+ * Injected into all web pages to enable AI-powered page transmogrification
  */
 
 import { RemixMessage } from '../shared/types';
@@ -19,16 +19,16 @@ async function handleMessage(message: RemixMessage): Promise<{ success: boolean;
     case 'EXTRACT_CONTENT':
       // Extract semantic content from the page
       try {
-        console.log('[Focus Remix] Extracting content...');
+        console.log('[Transmogrifier] Extracting content...');
         const extracted = extractContent();
         const serialized = serializeContent(extracted);
-        console.log('[Focus Remix] Content extracted, length:', serialized.length);
+        console.log('[Transmogrifier] Content extracted, length:', serialized.length);
         return { 
           success: true, 
           content: serialized,
         };
       } catch (error) {
-        console.error('[Focus Remix] Extraction error:', error);
+        console.error('[Transmogrifier] Extraction error:', error);
         return { success: false, error: `Content extraction failed: ${error}` };
       }
 
@@ -41,4 +41,4 @@ async function handleMessage(message: RemixMessage): Promise<{ success: boolean;
 }
 
 // Log that content script is loaded
-console.log('[Focus Remix] Content script loaded');
+console.log('[Transmogrifier] Content script loaded');

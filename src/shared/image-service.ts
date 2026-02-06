@@ -87,7 +87,7 @@ async function generateSingleImage(
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[Focus Remix] Image generation error:', errorText);
+      console.error('[Transmogrifier] Image generation error:', errorText);
       return {
         id,
         error: `API error: ${response.status} ${response.statusText}`,
@@ -111,7 +111,7 @@ async function generateSingleImage(
       revisedPrompt: imageData.revised_prompt,
     };
   } catch (error) {
-    console.error('[Focus Remix] Image generation failed:', error);
+    console.error('[Transmogrifier] Image generation failed:', error);
     return {
       id,
       error: error instanceof Error ? error.message : 'Unknown error',

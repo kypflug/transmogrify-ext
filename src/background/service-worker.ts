@@ -1,7 +1,7 @@
 /**
- * Focus Remix - Service Worker (Background Script)
- * Handles AI analysis, image generation, and saves remixed pages to IndexedDB
- * Supports parallel remix operations with independent progress tracking
+ * Transmogrifier - Service Worker (Background Script)
+ * Handles AI analysis, image generation, and saves transmogrified pages to IndexedDB
+ * Supports parallel transmogrify operations with independent progress tracking
  */
 
 import { RemixMessage, RemixResponse, GeneratedImageData, RemixRequest } from '../shared/types';
@@ -105,7 +105,7 @@ async function updateBadge(remixes: Record<string, RemixRequest>) {
     // Check if any recently completed
     const recentComplete = activeList.some(r => r.status === 'complete');
     if (recentComplete) {
-      await chrome.action.setBadgeText({ text: '✓' });
+      await chrome.action.setBadgeText({ text: 'Ã¢Å“â€œ' });
       await chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' });
     } else if (hasError) {
       await chrome.action.setBadgeText({ text: '!' });
@@ -116,12 +116,12 @@ async function updateBadge(remixes: Record<string, RemixRequest>) {
   } else if (inProgress.length === 1) {
     // Single active - show status emoji
     const statusEmoji: Record<string, string> = {
-      'extracting': '📄',
-      'analyzing': '🤖',
-      'generating-images': '🎨',
-      'saving': '💾',
+      'extracting': 'Ã°Å¸â€œâ€ž',
+      'analyzing': 'Ã°Å¸Â¤â€“',
+      'generating-images': 'Ã°Å¸Å½Â¨',
+      'saving': 'Ã°Å¸â€™Â¾',
     };
-    await chrome.action.setBadgeText({ text: statusEmoji[inProgress[0].status] || '⏳' });
+    await chrome.action.setBadgeText({ text: statusEmoji[inProgress[0].status] || 'Ã¢ÂÂ³' });
     await chrome.action.setBadgeBackgroundColor({ color: '#9C27B0' });
   } else {
     // Multiple active - show count
@@ -156,7 +156,7 @@ async function cleanupStaleRemixes(): Promise<{ cleaned: number; remaining: numb
     if (!hasController) {
       // No controller means the service worker restarted and the fetch is gone.
       // This is a truly orphaned request - mark as error.
-      console.log(`[Focus Remix] Cleaning orphaned remix ${id} (${Math.round(elapsed / 1000)}s old, no controller)`);
+      console.log(`[Transmogrifier] Cleaning orphaned remix ${id} (${Math.round(elapsed / 1000)}s old, no controller)`);
       remix.status = 'error';
       remix.error = `Request lost when browser suspended the extension (after ${Math.round(elapsed / 1000)}s). Please try again.`;
       cleaned.push(id);
@@ -166,7 +166,7 @@ async function cleanupStaleRemixes(): Promise<{ cleaned: number; remaining: numb
     } else {
       // Controller exists - request is still running. Add warnings if long.
       if (elapsed > LONG_WARNING_THRESHOLD_MS) {
-        remix.warning = `Running for ${Math.round(elapsed / 1000)}s — this is unusually long but may still complete`;
+        remix.warning = `Running for ${Math.round(elapsed / 1000)}s Ã¢â‚¬â€ this is unusually long but may still complete`;
         changed = true;
       } else if (elapsed > WARNING_THRESHOLD_MS) {
         remix.warning = `Taking longer than usual (${Math.round(elapsed / 1000)}s)`;
@@ -181,7 +181,7 @@ async function cleanupStaleRemixes(): Promise<{ cleaned: number; remaining: numb
     await updateBadge(remaining);
   }
   if (cleaned.length > 0) {
-    console.log(`[Focus Remix] Cleaned ${cleaned.length} orphaned remixes`);
+    console.log(`[Transmogrifier] Cleaned ${cleaned.length} orphaned remixes`);
   }
   
   return { cleaned: cleaned.length, remaining: Object.keys(remaining).length };
@@ -193,7 +193,7 @@ cleanupStaleRemixes().catch(console.error);
 // Listen for extension installation
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
-    console.log('[Focus Remix] Extension installed');
+    console.log('[Transmogrifier] Extension installed');
     loadPreferences();
   }
   // Clear any stale remixes on install/update
@@ -230,7 +230,7 @@ async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
       const controller = abortControllers.get(requestId);
       if (controller) {
         controller.abort();
-        console.log('[Focus Remix] Cancelled request:', requestId);
+        console.log('[Transmogrifier] Cancelled request:', requestId);
       }
       
       // Update status and cleanup
@@ -396,14 +396,14 @@ async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
  */
 async function performRemix(message: RemixMessage): Promise<RemixResponse> {
   const requestId = generateRequestId();
-  console.log('[Focus Remix] AI_ANALYZE started, request:', requestId);
+  console.log('[Transmogrifier] AI_ANALYZE started, request:', requestId);
   
   // Get the recipe
   const recipeId = message.payload?.recipeId || 'focus';
   const recipe = getRecipe(recipeId);
   const generateImagesFlag = message.payload?.generateImages ?? false;
   
-  console.log('[Focus Remix] Recipe:', recipeId, 'Generate images:', generateImagesFlag);
+  console.log('[Transmogrifier] Recipe:', recipeId, 'Generate images:', generateImagesFlag);
   
   if (!recipe) {
     return { success: false, error: `Unknown recipe: ${recipeId}` };
@@ -415,7 +415,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
     return { success: false, error: 'No active tab' };
   }
 
-  const pageTitle = tab.title || 'Remixed Page';
+  const pageTitle = tab.title || 'Transmogrified Page';
   const tabId = tab.id;
   
   // Initialize progress
@@ -432,7 +432,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
   // Request content extraction from content script
   let content: string;
   try {
-    console.log('[Focus Remix] Requesting content extraction...');
+    console.log('[Transmogrifier] Requesting content extraction...');
     const extractResponse = await chrome.tabs.sendMessage(tabId, { type: 'EXTRACT_CONTENT' });
     if (!extractResponse?.success || !extractResponse.content) {
       const error = extractResponse?.error || 'Failed to extract content';
@@ -441,7 +441,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
       return { success: false, error, requestId };
     }
     content = extractResponse.content;
-    console.log('[Focus Remix] Content extracted, length:', content.length);
+    console.log('[Transmogrifier] Content extracted, length:', content.length);
   } catch (error) {
     const errorMsg = `Content script error: ${error}`;
     await updateRemixProgress(requestId, { status: 'error', error: errorMsg });
@@ -475,7 +475,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
   const isImageHeavyRecipe = generateImagesFlag || recipeId === 'illustrated';
   const maxTokens = isImageHeavyRecipe ? 48000 : 16384;
   
-  console.log('[Focus Remix] Calling Azure OpenAI (max tokens:', maxTokens, ')...');
+  console.log('[Transmogrifier] Calling Azure OpenAI (max tokens:', maxTokens, ')...');
   const aiResult = await analyzeWithAI({
     recipe,
     domContent: content,
@@ -489,7 +489,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
   elapsedIntervals.delete(requestId);
   
   const aiDuration = Math.round((Date.now() - aiStartTime) / 1000);
-  console.log('[Focus Remix] AI response received in', aiDuration, 'seconds:', aiResult.success ? 'success' : 'failed', aiResult.error || '');
+  console.log('[Transmogrifier] AI response received in', aiDuration, 'seconds:', aiResult.success ? 'success' : 'failed', aiResult.error || '');
 
   if (!aiResult.success || !aiResult.data) {
     const error = aiResult.error || 'AI analysis failed';
@@ -503,32 +503,32 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
   // Generate images if requested and AI returned image placeholders
   if (generateImagesFlag && aiResult.data.images && aiResult.data.images.length > 0) {
     if (!isImageConfigured()) {
-      console.warn('[Focus Remix] Image generation requested but not configured');
+      console.warn('[Transmogrifier] Image generation requested but not configured');
     } else {
       await updateRemixProgress(requestId, { 
         status: 'generating-images', 
         step: `Generating ${aiResult.data.images.length} images...` 
       });
       
-      console.log('[Focus Remix] Generating', aiResult.data.images.length, 'images...');
+      console.log('[Transmogrifier] Generating', aiResult.data.images.length, 'images...');
       try {
         const generatedImages = await generateImagesFromPlaceholders(aiResult.data.images);
-        console.log('[Focus Remix] Images generated:', generatedImages.length);
+        console.log('[Transmogrifier] Images generated:', generatedImages.length);
         
         // Replace image placeholders in HTML with actual data URLs
         finalHtml = replaceImagePlaceholders(finalHtml, generatedImages);
       } catch (imgError) {
-        console.error('[Focus Remix] Image generation failed:', imgError);
+        console.error('[Transmogrifier] Image generation failed:', imgError);
         // Continue without images
       }
     }
   }
 
   // Save to IndexedDB and open viewer
-  await updateRemixProgress(requestId, { status: 'saving', step: 'Saving remixed page...' });
+  await updateRemixProgress(requestId, { status: 'saving', step: 'Saving transmogrified page...' });
   
   try {
-    console.log('[Focus Remix] Saving to IndexedDB, HTML length:', finalHtml.length);
+    console.log('[Transmogrifier] Saving to IndexedDB, HTML length:', finalHtml.length);
     
     // Get recipe name for display
     const recipeName = BUILT_IN_RECIPES.find(r => r.id === recipeId)?.name || recipeId;
@@ -543,7 +543,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
       originalContent: content,
     });
     
-    console.log('[Focus Remix] Article saved:', savedArticle.id);
+    console.log('[Transmogrifier] Article saved:', savedArticle.id);
     
     // Open the viewer page
     const viewerUrl = chrome.runtime.getURL(`src/viewer/viewer.html?id=${savedArticle.id}`);
@@ -608,7 +608,7 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
     return { success: false, error: `Unknown recipe: ${recipeId}` };
   }
   
-  console.log('[Focus Remix] Respinning article:', articleId, 'with recipe:', recipeId, 'request:', requestId);
+  console.log('[Transmogrifier] Respinning article:', articleId, 'with recipe:', recipeId, 'request:', requestId);
   
   // Create AbortController for this request
   const controller = new AbortController();
@@ -681,7 +681,7 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
       const generatedImages = await generateImagesFromPlaceholders(aiResult.data.images);
       finalHtml = replaceImagePlaceholders(finalHtml, generatedImages);
     } catch (imgError) {
-      console.error('[Focus Remix] Image generation failed:', imgError);
+      console.error('[Transmogrifier] Image generation failed:', imgError);
     }
   }
   
@@ -723,7 +723,7 @@ async function generateImagesFromPlaceholders(placeholders: ImagePlaceholder[]):
     return [];
   }
 
-  console.log(`[Focus Remix] Generating ${placeholders.length} images...`);
+  console.log(`[Transmogrifier] Generating ${placeholders.length} images...`);
 
   // Build image generation requests
   const requests: ImageGenerationRequest[] = placeholders.map((placeholder) => ({
@@ -750,7 +750,7 @@ async function generateImagesFromPlaceholders(placeholders: ImagePlaceholder[]):
       } else if (generated.url) {
         dataUrl = generated.url;
       } else {
-        console.warn(`[Focus Remix] No image data for ${placeholder.id}`);
+        console.warn(`[Transmogrifier] No image data for ${placeholder.id}`);
         continue;
       }
       
@@ -759,9 +759,9 @@ async function generateImagesFromPlaceholders(placeholders: ImagePlaceholder[]):
         dataUrl,
         altText: placeholder.altText,
       });
-      console.log(`[Focus Remix] Generated image: ${placeholder.id}`);
+      console.log(`[Transmogrifier] Generated image: ${placeholder.id}`);
     } else {
-      console.warn(`[Focus Remix] Failed to generate image ${placeholder.id}:`, generated?.error);
+      console.warn(`[Transmogrifier] Failed to generate image ${placeholder.id}:`, generated?.error);
     }
   }
 

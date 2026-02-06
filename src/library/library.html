@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Transmogrifier Library</title>
+  <link rel="stylesheet" href="library.css">
+</head>
+<body>
+  <div class="library-layout">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <header class="sidebar-header">
+        <div class="sidebar-brand">
+          <span class="brand-icon">📦</span>
+          <h1>Transmogrifier Library</h1>
+        </div>
+      </header>
+
+      <div class="sidebar-controls">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="searchInput" placeholder="Search articles…" autocomplete="off">
+          <button class="search-clear hidden" id="searchClear" title="Clear search">✕</button>
+        </div>
+
+        <div class="filter-row">
+          <select id="filterSelect" title="Filter articles">
+            <option value="all">All Articles</option>
+            <option value="favorites">★ Favorites</option>
+            <!-- Recipe filters populated by JS -->
+          </select>
+
+          <select id="sortSelect" title="Sort articles">
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="alpha">A → Z</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="article-list" id="articleList">
+        <!-- Populated by JS -->
+      </div>
+
+      <footer class="sidebar-footer" id="sidebarFooter">
+        <!-- e.g. "12 articles · 4.2 MB" -->
+      </footer>
+
+      <!-- Empty state -->
+      <div class="sidebar-empty hidden" id="sidebarEmpty">
+        <div class="empty-icon">📄</div>
+        <p class="empty-title">No transmogrifications yet</p>
+        <p class="empty-hint">Visit any web page and click Transmogrify to get started</p>
+      </div>
+    </aside>
+
+    <!-- Resize handle -->
+    <div class="resize-handle" id="resizeHandle" title="Drag to resize"></div>
+
+    <!-- Reading pane -->
+    <main class="reading-pane" id="readingPane">
+      <!-- No-selection placeholder -->
+      <div class="reading-empty" id="readingEmpty">
+        <div class="reading-empty-icon">📖</div>
+        <p>Select an article to read</p>
+      </div>
+
+      <!-- Article view -->
+      <div class="reading-article hidden" id="readingArticle">
+        <header class="article-header">
+          <div class="article-meta">
+            <h2 class="article-title" id="readingTitle">Untitled</h2>
+            <div class="article-info" id="readingInfo">
+              <!-- source · recipe · date -->
+            </div>
+          </div>
+          <div class="article-actions">
+            <button class="action-btn" id="btnFavorite" title="Toggle favorite">
+              <span id="favoriteIcon">☆</span>
+              <span class="action-label">Favorite</span>
+            </button>
+            <button class="action-btn" id="btnExport" title="Save to file">
+              💾 <span class="action-label">Save</span>
+            </button>
+            <button class="action-btn" id="btnOriginal" title="Open original page">
+              🔗 <span class="action-label">Original</span>
+            </button>
+            <button class="action-btn" id="btnRespin" title="Respin with different recipe">
+              🔄 <span class="action-label">Respin</span>
+            </button>
+            <button class="action-btn danger" id="btnDelete" title="Delete article">
+              🗑️
+            </button>
+          </div>
+        </header>
+
+        <iframe id="contentFrame" class="content-frame" sandbox="allow-same-origin allow-scripts"></iframe>
+      </div>
+    </main>
+  </div>
+
+  <!-- Respin Modal -->
+  <div id="respinModal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>🔄 Respin Article</h3>
+      </div>
+      <div class="modal-body">
+        <div class="modal-section">
+          <label>Choose a Recipe</label>
+          <div class="recipe-select" id="recipeSelect">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+        <div class="modal-section" id="customPromptSection" style="display: none;">
+          <label>Custom Instructions</label>
+          <textarea class="custom-prompt-input" id="customPromptInput" placeholder="Tell the AI how you want this page transformed..."></textarea>
+        </div>
+        <div class="modal-section">
+          <label>Options</label>
+          <div class="image-toggle-row">
+            <input type="checkbox" id="generateImagesCheck">
+            <span>🎨 Generate AI Images</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-btn cancel" id="cancelRespinBtn">Cancel</button>
+        <button class="modal-btn primary" id="confirmRespinBtn">✨ Respin</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete confirmation -->
+  <div id="deleteModal" class="modal-overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-header danger">
+        <h3>🗑️ Delete Article</h3>
+      </div>
+      <div class="modal-body">
+        <p>Delete "<span id="deleteArticleTitle"></span>"? This cannot be undone.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-btn cancel" id="cancelDeleteBtn">Cancel</button>
+        <button class="modal-btn danger" id="confirmDeleteBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile back button (shown < 900px) -->
+  <button class="mobile-back hidden" id="mobileBack" title="Back to list">← Back</button>
+
+  <script src="library.js" type="module"></script>
+</body>
+</html>

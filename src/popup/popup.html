@@ -3,14 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Focus Remix</title>
+    <title>Transmogrifier</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
     <div class="popup-container">
       <!-- Tab Navigation -->
       <nav class="tab-nav">
-        <button class="tab-btn active" data-tab="remix">Remix</button>
+        <button class="tab-btn active" data-tab="remix">Transmogrify</button>
         <button class="tab-btn" data-tab="saved">Saved <span class="article-count" id="articleCount"></span></button>
       </nav>
 
@@ -19,13 +19,13 @@
         <!-- Scrollable content area -->
         <div class="remix-scroll-area">
           <header class="popup-header">
-            <h1>Focus Remix</h1>
+            <h1>Transmogrifier</h1>
             <span class="status-indicator" id="statusIndicator">Ready</span>
           </header>
 
           <!-- Active Remixes Section -->
           <section class="active-remixes-section" id="activeRemixesSection" style="display: none;">
-            <h2>Active Remixes <span class="active-count" id="activeCount"></span> <a href="#" id="clearStuck" class="clear-stuck-link">Clear stuck</a></h2>
+            <h2>Active Jobs <span class="active-count" id="activeCount"></span> <a href="#" id="clearStuck" class="clear-stuck-link">Clear stuck</a></h2>
             <div class="active-remixes-list" id="activeRemixesList">
               <!-- Populated by JS -->
             </div>
@@ -73,7 +73,7 @@ Examples:
 
           <footer class="popup-footer">
             <button id="remixBtn" class="primary-btn">
-              <span class="btn-text">Remix → New Tab</span>
+              <span class="btn-text">Transmogrify → New Tab</span>
             </button>
           </footer>
         </div>
@@ -83,7 +83,10 @@ Examples:
       <div class="tab-content" id="savedTab">
         <header class="saved-header">
           <h2>Saved Articles</h2>
-          <span class="storage-info" id="storageInfo"></span>
+          <div class="saved-header-actions">
+            <span class="storage-info" id="storageInfo"></span>
+            <button class="library-btn" id="openLibraryBtn" title="Open Library">📖</button>
+          </div>
         </header>
         
         <div class="articles-list" id="articlesList">
@@ -93,7 +96,7 @@ Examples:
         <div class="empty-state" id="emptyState" style="display: none;">
           <div class="empty-icon">📄</div>
           <p>No saved articles yet</p>
-          <p class="empty-hint">Use the Remix tab to transform pages</p>
+          <p class="empty-hint">Use the Transmogrify tab to transform pages</p>
         </div>
       </div>
     </div>

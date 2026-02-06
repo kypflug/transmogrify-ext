@@ -1,7 +1,7 @@
-# Focus Remix - Product Specification
+# Transmogrifier - Product Specification
 
 ## Overview
-Focus Remix is a Microsoft Edge browser extension that "remixes" web pages by intelligently mutating the live DOM to improve readability, reduce distractions, and enhance content layout based on user preferences.
+Transmogrifier is a Microsoft Edge browser extension that "transmogrifies" web pages by intelligently mutating the live DOM to improve readability, reduce distractions, and enhance content layout based on user preferences.
 
 ## Problem Statement
 Modern web pages are cluttered with:
@@ -23,7 +23,7 @@ Users need a tool that transforms any page into a focused, readable experience w
 
 ## Core Features
 
-### 1. Remix Modes
+### 1. Transmogrify Modes
 
 #### 1.1 Focus Mode
 **Purpose**: Hide distractions while keeping the page structure intact.
@@ -214,14 +214,14 @@ The extension must intelligently identify:
 ## Appendix
 
 ### A. Competitor Analysis
-| Feature | Focus Remix | Reader View (Built-in) | Mercury Reader |
+| Feature | Transmogrify | Reader View (Built-in) | Mercury Reader |
 |---------|-------------|------------------------|----------------|
-| Focus Mode | ✅ | ❌ | ❌ |
-| Reader Mode | ✅ | ✅ | ✅ |
-| Custom CSS | ✅ | ❌ | ❌ |
+| Focus Mode | Ã¢Å“â€¦ | Ã¢ÂÅ’ | Ã¢ÂÅ’ |
+| Reader Mode | Ã¢Å“â€¦ | Ã¢Å“â€¦ | Ã¢Å“â€¦ |
+| Custom CSS | Ã¢Å“â€¦ | Ã¢ÂÅ’ | Ã¢ÂÅ’ |
 | Themes | 3 | 1 | 2 |
-| Per-site settings | ✅ | ❌ | ❌ |
-| Active Development | ✅ | Varies | ❌ |
+| Per-site settings | Ã¢Å“â€¦ | Ã¢ÂÅ’ | Ã¢ÂÅ’ |
+| Active Development | Ã¢Å“â€¦ | Varies | Ã¢ÂÅ’ |
 
 ### B. Content Selectors Reference
 ```css

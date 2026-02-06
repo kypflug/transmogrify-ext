@@ -1,9 +1,10 @@
 /**
- * IndexedDB Storage Service for Focus Remix
- * Stores remixed pages with no size limits and full persistence
+ * IndexedDB Storage Service for Transmogrifier
+ * Stores transmogrified pages with no size limits and full persistence
  */
 
-const DB_NAME = 'FocusRemixDB';
+const DB_NAME = 'TransmogrifierDB';
+const OLD_DB_NAME = 'FocusRemixDB'; // Previous name, for migration
 const DB_VERSION = 1;
 const STORE_NAME = 'articles';
 
@@ -54,7 +55,8 @@ async function getDB(): Promise<IDBDatabase> {
 
     request.onsuccess = () => {
       dbInstance = request.result;
-      resolve(dbInstance);
+      // Trigger one-time migration from old DB name (async, non-blocking)
+      migrateFromOldDB().then(() => resolve(dbInstance!)).catch(() => resolve(dbInstance!));
     };
 
     request.onupgradeneeded = (event) => {
@@ -83,8 +85,100 @@ function generateId(): string {
   return `article_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }
 
+let migrationDone = false;
+
 /**
- * Save a remixed article to IndexedDB
+ * Migrate articles from the old FocusRemixDB to TransmogrifierDB.
+ * This is a one-time operation — after copying, the old DB is deleted.
+ */
+async function migrateFromOldDB(): Promise<void> {
+  if (migrationDone) return;
+  migrationDone = true;
+
+  // Check if old database exists by trying to open it
+  return new Promise((resolve) => {
+    const openReq = indexedDB.open(OLD_DB_NAME, 1);
+
+    openReq.onerror = () => {
+      // Old DB doesn't exist or can't be opened — nothing to migrate
+      resolve();
+    };
+
+    openReq.onsuccess = () => {
+      const oldDb = openReq.result;
+
+      // If the old DB has no articles store, nothing to migrate
+      if (!oldDb.objectStoreNames.contains(STORE_NAME)) {
+        oldDb.close();
+        indexedDB.deleteDatabase(OLD_DB_NAME);
+        resolve();
+        return;
+      }
+
+      // Read all articles from old DB
+      const tx = oldDb.transaction([STORE_NAME], 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const getAllReq = store.getAll();
+
+      getAllReq.onsuccess = async () => {
+        const articles: SavedArticle[] = getAllReq.result || [];
+        oldDb.close();
+
+        if (articles.length === 0) {
+          indexedDB.deleteDatabase(OLD_DB_NAME);
+          resolve();
+          return;
+        }
+
+        console.log(`[Storage] Migrating ${articles.length} articles from ${OLD_DB_NAME}...`);
+
+        try {
+          // Write all articles to the new DB
+          const newDb = await getDB();
+          const writeTx = newDb.transaction([STORE_NAME], 'readwrite');
+          const writeStore = writeTx.objectStore(STORE_NAME);
+
+          for (const article of articles) {
+            // Use put (not add) so duplicates are handled gracefully
+            writeStore.put(article);
+          }
+
+          await new Promise<void>((res, rej) => {
+            writeTx.oncomplete = () => res();
+            writeTx.onerror = () => rej(writeTx.error);
+          });
+
+          console.log(`[Storage] Migration complete — ${articles.length} articles restored`);
+
+          // Delete old database now that data is safely copied
+          indexedDB.deleteDatabase(OLD_DB_NAME);
+          console.log(`[Storage] Old database ${OLD_DB_NAME} removed`);
+        } catch (err) {
+          console.error('[Storage] Migration failed (old data preserved):', err);
+          // Don't delete old DB if migration failed
+        }
+
+        resolve();
+      };
+
+      getAllReq.onerror = () => {
+        console.error('[Storage] Failed to read old database:', getAllReq.error);
+        oldDb.close();
+        resolve();
+      };
+    };
+
+    // If the old DB needs an upgrade, it was never properly created — skip
+    openReq.onupgradeneeded = () => {
+      // Abort — this means the old DB doesn't actually have our schema
+      openReq.transaction?.abort();
+      resolve();
+    };
+  });
+}
+
+/**
+ * Save a transmogrified article to IndexedDB
  */
 export async function saveArticle(data: {
   title: string;
@@ -293,7 +387,7 @@ export async function exportArticleToFile(id: string): Promise<void> {
     .replace(/\s+/g, '_')
     .substring(0, 50);
 
-  const filename = `remix_${safeTitle}_${article.id}.html`;
+  const filename = `transmogrified_${safeTitle}_${article.id}.html`;
 
   // Trigger download via chrome.downloads API
   const base64Html = btoa(unescape(encodeURIComponent(article.html)));
@@ -301,7 +395,7 @@ export async function exportArticleToFile(id: string): Promise<void> {
 
   await chrome.downloads.download({
     url: dataUrl,
-    filename: `Focus Remix/${filename}`,
+    filename: `Transmogrifier/${filename}`,
     saveAs: true,
   });
 }

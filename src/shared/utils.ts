@@ -1,5 +1,5 @@
 /**
- * Shared utility functions for Focus Remix extension
+ * Shared utility functions for Transmogrifier extension
  */
 
 import { UserPreferences, DEFAULT_PREFERENCES } from './types';
@@ -82,5 +82,5 @@ export function debounce<T extends (...args: unknown[]) => void>(
  * Generate a unique ID for DOM elements
  */
 export function generateId(): string {
-  return `focus-remix-${Math.random().toString(36).substring(2, 9)}`;
+  return `transmogrify-${Math.random().toString(36).substring(2, 9)}`;
 }
