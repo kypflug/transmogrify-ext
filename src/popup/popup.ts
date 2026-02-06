@@ -26,6 +26,7 @@ const storageInfo = document.getElementById('storageInfo')!;
 const activeRemixesSection = document.getElementById('activeRemixesSection')!;
 const activeRemixesList = document.getElementById('activeRemixesList')!;
 const activeCountEl = document.getElementById('activeCount')!;
+const clearStuckLink = document.getElementById('clearStuck')!;
 
 // DOM Elements - Remix
 const elements = {
@@ -239,6 +240,19 @@ async function cancelRemix(requestId: string) {
 }
 
 /**
+ * Clear all stuck/stale remixes
+ */
+async function clearStuckRemixes() {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'CLEAR_STALE_REMIXES' });
+    console.log('[Popup] Cleared stuck remixes:', response);
+    await loadActiveRemixes();
+  } catch (e) {
+    console.error('[Popup] Failed to clear stuck remixes:', e);
+  }
+}
+
+/**
  * Handle article actions (click, favorite, export, delete)
  */
 async function handleArticleAction(articleId: string, action: string) {
@@ -372,6 +386,12 @@ function setupEventListeners() {
         cancelRemix(remixItem.dataset.requestId);
       }
     }
+  });
+  
+  // Clear stuck remixes link
+  clearStuckLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    clearStuckRemixes();
   });
   
   // Listen for progress updates from service worker

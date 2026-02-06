@@ -26,6 +26,9 @@ const abortControllers = new Map<string, AbortController>();
 // In-memory storage for elapsed time intervals
 const elapsedIntervals = new Map<string, ReturnType<typeof setInterval>>();
 
+// Max time a remix can run before being considered stale (5 minutes)
+const STALE_REMIX_THRESHOLD_MS = 5 * 60 * 1000;
+
 /**
  * Generate a unique request ID
  */
@@ -126,6 +129,53 @@ async function updateBadge(remixes: Record<string, RemixRequest>) {
   }
 }
 
+/**
+ * Cleanup stale remixes that got orphaned when service worker was suspended
+ * This is called on startup and can be triggered manually
+ */
+async function cleanupStaleRemixes(): Promise<{ cleaned: number; remaining: number }> {
+  const now = Date.now();
+  const remixes = await getActiveRemixes();
+  const cleaned: string[] = [];
+  const remaining: Record<string, RemixRequest> = {};
+  
+  for (const [id, remix] of Object.entries(remixes)) {
+    // Already completed or errored - schedule cleanup
+    if (['complete', 'error'].includes(remix.status)) {
+      scheduleCleanup(id, 1000);
+      remaining[id] = remix;
+      continue;
+    }
+    
+    // Check if stale (running too long without our in-memory controller)
+    const elapsed = now - remix.startTime;
+    const hasController = abortControllers.has(id);
+    
+    if (elapsed > STALE_REMIX_THRESHOLD_MS && !hasController) {
+      // This remix is orphaned - mark as error
+      console.log(`[Focus Remix] Cleaning stale remix ${id} (${Math.round(elapsed / 1000)}s old)`);
+      remix.status = 'error';
+      remix.error = `Request orphaned after ${Math.round(elapsed / 1000)}s (service worker was suspended)`;
+      cleaned.push(id);
+      remaining[id] = remix;
+      scheduleCleanup(id, 5000);
+    } else {
+      remaining[id] = remix;
+    }
+  }
+  
+  if (cleaned.length > 0) {
+    await chrome.storage.local.set({ activeRemixes: remaining });
+    await updateBadge(remaining);
+    console.log(`[Focus Remix] Cleaned ${cleaned.length} stale remixes`);
+  }
+  
+  return { cleaned: cleaned.length, remaining: Object.keys(remaining).length };
+}
+
+// Run cleanup on service worker startup (every time it wakes up)
+cleanupStaleRemixes().catch(console.error);
+
 // Listen for extension installation
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
@@ -209,6 +259,28 @@ async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
       await chrome.storage.local.set({ activeRemixes: toKeep });
       await updateBadge(toKeep);
       return { success: true };
+    }
+
+    case 'CLEAR_STALE_REMIXES': {
+      // Force cleanup all stale/stuck remixes
+      const result = await cleanupStaleRemixes();
+      // Also force-clear anything that's been running > 30 seconds without a controller
+      const remixes = await getActiveRemixes();
+      let forceCleaned = 0;
+      for (const [id, remix] of Object.entries(remixes)) {
+        if (!['complete', 'error', 'idle'].includes(remix.status) && !abortControllers.has(id)) {
+          remix.status = 'error';
+          remix.error = 'Manually cleared (no active controller)';
+          remixes[id] = remix;
+          forceCleaned++;
+          scheduleCleanup(id, 1000);
+        }
+      }
+      if (forceCleaned > 0) {
+        await chrome.storage.local.set({ activeRemixes: remixes });
+        await updateBadge(remixes);
+      }
+      return { success: true, cleaned: result.cleaned + forceCleaned };
     }
 
     case 'GET_ARTICLES': {

@@ -141,6 +141,21 @@ body {
   border-radius: 8px;
 }
 
+.clear-stuck-link {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 400;
+  color: #999;
+  text-decoration: none;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.clear-stuck-link:hover {
+  color: #667eea;
+  text-decoration: underline;
+}
+
 .active-remixes-list {
   display: flex;
   flex-direction: column;

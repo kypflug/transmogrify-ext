@@ -55,7 +55,8 @@ export interface RemixMessage {
     | 'OPEN_ARTICLE'
     | 'RESPIN_ARTICLE'
     | 'GET_ACTIVE_REMIXES'
-    | 'CANCEL_REMIX';
+    | 'CANCEL_REMIX'
+    | 'CLEAR_STALE_REMIXES';
   payload?: RemixPayload;
 }
 
@@ -95,6 +96,7 @@ export interface RemixResponse {
   stats?: { count: number; totalSize: number };
   requestId?: string; // For parallel remix tracking
   activeRemixes?: RemixRequest[]; // For GET_ACTIVE_REMIXES
+  cleaned?: number; // For CLEAR_STALE_REMIXES
 }
 
 /** Status of a remix operation */
