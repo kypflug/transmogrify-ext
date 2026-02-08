@@ -2,6 +2,16 @@
 
 All notable changes to Transmogrifier will be documented in this file.
 
+## [0.4.6] - 2026-02-08
+
+### Added
+- **Stable extension ID** — Manifest `key` field pins the extension ID across devices, so the OAuth redirect URI is consistent without re-registering in Azure AD
+- **Cloud-only articles in Library** — Library now uses `getMergedArticleList()` to show articles that exist in OneDrive but haven't been downloaded locally, with a ☁ cloud badge; clicking a cloud-only article downloads it on demand via `SYNC_DOWNLOAD_ARTICLE`
+- **Sign-out button** — Sync bar in Library now shows a sign-out button when signed in
+
+### Fixed
+- **OAuth SPA redirect handling** — Added `response_mode=query` to the auth URL and fragment-fallback parsing, fixing sign-in failures when the redirect URI is registered as a Single-page application in Azure AD
+
 ## [0.4.5] - 2026-02-08
 
 ### Added

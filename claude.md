@@ -228,7 +228,8 @@ The Library (`src/library/`) is a full-page article browser opened from the popu
 - **In-progress remixes**: Active jobs shown at top of sidebar with live status, spinner, and cancel button
 - **Live updates**: Sidebar auto-refreshes via `ARTICLES_CHANGED` broadcast from service worker
 - **Resizable sidebar**: Drag handle between panes
-- **Sync bar**: Sign-in status, manual sync button
+- **Sync bar**: Sign-in status, manual sync button, sign-out button
+- **Cloud-only articles**: Articles in OneDrive but not yet downloaded locally appear with a ☁ badge; lazy-downloaded on click via `SYNC_DOWNLOAD_ARTICLE`
 - **Save FAB hidden**: The floating save button is hidden in the Library iframe (redundant with header save button)
 
 ## OneDrive Sync
@@ -238,8 +239,10 @@ Cross-device article sync via Microsoft Graph API:
 ### Architecture
 - **`auth-service.ts`**: OAuth2 PKCE flow via `chrome.identity.launchWebAuthFlow`
   - Azure client ID: `4b54bcee-1c83-4f52-9faf-d0dfd89c5ac2`
+  - Uses `response_mode=query` with fragment fallback for SPA redirect compatibility
   - Scopes: `Files.ReadWrite.AppFolder`, `User.Read`, `offline_access`
   - Token stored in `chrome.storage.local`, auto-refresh on expiry
+  - Manifest `key` field pins the extension ID so redirect URI is stable across devices
 - **`onedrive-service.ts`**: Graph API client
   - Stores articles as JSON files in OneDrive AppData special folder
   - Delta queries for efficient change detection
