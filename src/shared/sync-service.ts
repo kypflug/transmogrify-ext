@@ -148,13 +148,13 @@ export async function pushMetaUpdateToCloud(article: SavedArticle): Promise<void
  * Run a full delta sync: pull changes from OneDrive and merge locally
  * Returns the number of articles synced
  */
-export async function pullFromCloud(): Promise<{ pulled: number; deleted: number }> {
-  if (!(await isSignedIn())) return { pulled: 0, deleted: 0 };
+export async function pullFromCloud(): Promise<{ pulled: number; deleted: number; pushed: number }> {
+  if (!(await isSignedIn())) return { pulled: 0, deleted: 0, pushed: 0 };
 
   const state = await getSyncState();
   if (state.isSyncing) {
     console.log('[Sync] Already syncing, skipping');
-    return { pulled: 0, deleted: 0 };
+    return { pulled: 0, deleted: 0, pushed: 0 };
   }
 
   await setSyncState({ isSyncing: true, lastError: undefined });
@@ -211,13 +211,39 @@ export async function pullFromCloud(): Promise<{ pulled: number; deleted: number
     await setCloudIndex(Array.from(indexMap.values()));
     await setSyncState({ lastSyncTime: Date.now(), isSyncing: false });
 
-    console.log(`[Sync] Pull complete: ${pulled} pulled, ${deleted} deleted`);
-    return { pulled, deleted };
+    // ─── Reconciliation: push local-only articles to cloud ───
+    // After pull completes, find local articles missing from the cloud index
+    // and push them. This self-heals any failed initial pushes.
+    const finalCloudIndex = await getCloudIndex();
+    const cloudIds = new Set(finalCloudIndex.map(a => a.id));
+    let pushed = 0;
+
+    for (const local of localArticles) {
+      if (!cloudIds.has(local.id)) {
+        try {
+          const fullArticle = await getArticle(local.id);
+          if (fullArticle) {
+            await pushArticleToCloud(fullArticle);
+            pushed++;
+            console.log('[Sync] Reconciled local-only article to cloud:', local.id);
+          }
+        } catch (err) {
+          console.warn('[Sync] Failed to reconcile article:', local.id, err);
+        }
+      }
+    }
+
+    if (pushed > 0) {
+      console.log(`[Sync] Reconciliation pushed ${pushed} local-only articles to cloud`);
+    }
+
+    console.log(`[Sync] Pull complete: ${pulled} pulled, ${deleted} deleted, ${pushed} reconciled`);
+    return { pulled, deleted, pushed };
   } catch (err) {
     const errorMsg = String(err);
     console.error('[Sync] Pull failed:', errorMsg);
     await setSyncState({ isSyncing: false, lastError: errorMsg });
-    return { pulled: 0, deleted: 0 };
+    return { pulled: 0, deleted: 0, pushed: 0 };
   }
 }
 
@@ -339,7 +365,7 @@ export function setupSyncAlarm(): void {
     if (alarm.name === SYNC_ALARM_NAME) {
       pullFromCloud()
         .then(result => {
-          if (result.pulled > 0 || result.deleted > 0) {
+          if (result.pulled > 0 || result.deleted > 0 || result.pushed > 0) {
             // Notify open library/viewer pages that articles changed
             chrome.runtime.sendMessage({ type: 'ARTICLES_CHANGED', reason: 'sync' }).catch(() => {});
           }

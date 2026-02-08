@@ -4,6 +4,9 @@ All notable changes to Transmogrifier will be documented in this file.
 
 ## [0.4.4] - 2026-02-08
 
+### Added
+- **Sync reconciliation** — `pullFromCloud` now detects local articles missing from the cloud index and pushes them automatically, self-healing any articles whose initial push failed silently
+
 ### Fixed
 - **Critical: Article ID preservation on sync** — `saveOrUpdateArticle` no longer generates a new ID when pulling remote articles; added `upsertArticle()` to `storage-service.ts` using `store.put()` to preserve original IDs, timestamps, and favorite state. This was the root cause of duplicate articles appearing across devices.
 - **Cloud index drift** — Push operations (`pushArticleToCloud`, `pushMetaUpdateToCloud`) no longer manually update the cloud index; it is now rebuilt exclusively from pull/delta results, preventing index-vs-reality divergence.
