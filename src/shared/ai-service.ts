@@ -41,7 +41,7 @@ export async function analyzeWithAI(options: AIRequestOptions): Promise<AIServic
     recipe, 
     domContent, 
     customPrompt, 
-    maxTokens = 16384, 
+    maxTokens = 32768, 
     includeImages = false,
     abortSignal,
   } = options;
@@ -109,7 +109,21 @@ export async function analyzeWithAI(options: AIRequestOptions): Promise<AIServic
     console.log('[Transmogrifier] Finish reason:', result.choices?.[0]?.finish_reason);
     console.log('[Transmogrifier] Token usage - Prompt:', result.usage?.prompt_tokens, 'Completion:', result.usage?.completion_tokens);
     
+    const finishReason = result.choices?.[0]?.finish_reason;
     const content = result.choices?.[0]?.message?.content;
+
+    if (finishReason === 'length') {
+      console.error('[Transmogrifier] Response truncated — hit max_completion_tokens limit');
+      return {
+        success: false,
+        error: 'AI response was too long and got cut off. Try a shorter page or a simpler recipe.',
+        usage: {
+          promptTokens: result.usage?.prompt_tokens || 0,
+          completionTokens: result.usage?.completion_tokens || 0,
+        },
+        durationMs: Date.now() - startTime,
+      };
+    }
 
     if (!content) {
       const refusal = result.choices?.[0]?.message?.refusal;
@@ -121,7 +135,7 @@ export async function analyzeWithAI(options: AIRequestOptions): Promise<AIServic
       console.error('[Transmogrifier] No content in response:', result);
       return {
         success: false,
-        error: `No response from AI. Finish reason: ${result.choices?.[0]?.finish_reason || 'unknown'}`,
+        error: `No response from AI. Finish reason: ${finishReason || 'unknown'}`,
       };
     }
 
