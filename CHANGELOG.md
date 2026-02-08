@@ -2,6 +2,27 @@
 
 All notable changes to Transmogrifier will be documented in this file.
 
+## [0.4.5] - 2026-02-08
+
+### Added
+- **Multi-provider AI support** — The extension now supports four AI providers, selected at build time via `VITE_AI_PROVIDER`:
+  - **Azure OpenAI** (default, backwards-compatible)
+  - **OpenAI** (direct API)
+  - **Anthropic** (Claude)
+  - **Google** (Gemini)
+- **Multi-provider image generation** — Image generation now supports OpenAI direct and Google Gemini (Nano Banana) in addition to Azure OpenAI, via `VITE_IMAGE_PROVIDER`
+- **`getProviderName()`** helper for human-readable provider display in error messages and logs
+- **Provider-specific adapters** in `ai-service.ts` — `callAzureOpenAI`, `callOpenAI`, `callAnthropic`, `callGoogle` each handle URL construction, auth headers, request format, and response parsing
+
+### Changed
+- **`config.ts` rewritten** — Monolithic `AIConfig`/`ImageConfig` interfaces replaced with discriminated union types (`AzureOpenAIConfig | OpenAIConfig | AnthropicConfig | GoogleConfig`) for type-safe provider switching
+- **`ai-service.ts` refactored** — Provider-specific logic extracted from `analyzeWithAI()` into separate adapter functions; shared `parseOpenAIResponse()` for Azure OpenAI and OpenAI direct
+- **`image-service.ts` refactored** — `generateSingleImage()` now dispatches to `generateAzureImage()`, `generateOpenAIImage()`, or `generateGoogleImage()` based on active provider
+- **`.env.example` expanded** — Full multi-provider template with all four text providers and both image providers
+- **README.md** — New multi-provider feature bullet, expanded prerequisites with provider links, per-provider `.env` configuration examples, image generation provider docs
+- **claude.md** — Updated architecture diagram, file descriptions, env config section, and API notes
+- **copilot-instructions.md** — Updated tech stack and description
+
 ## [0.4.4] - 2026-02-08
 
 ### Added

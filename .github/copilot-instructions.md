@@ -3,7 +3,7 @@
 > Full documentation: [claude.md](../claude.md)
 
 ## What This Is
-Edge extension (Manifest V3) that uses an LLM (Azure OpenAI, OpenAI, Anthropic Claude, or Google Gemini) to transform web pages into beautiful standalone HTML documents. Optional AI images via OpenAI-family providers. Articles stored in IndexedDB, synced via OneDrive.
+Edge extension (Manifest V3) that uses an LLM (Azure OpenAI, OpenAI, Anthropic Claude, or Google Gemini) to transform web pages into beautiful standalone HTML documents. Optional AI images via Azure OpenAI, OpenAI, or Google Gemini. Articles stored in IndexedDB, synced via OneDrive.
 
 ## Companion PWA
 **Library of Transmogrifia** ([kypflug/transmogrifia-pwa](https://github.com/kypflug/transmogrifia-pwa)) — Read-only PWA for browsing transmogrified articles on any device. Shares the same Azure AD app, OneDrive `articles/` folder, and `OneDriveArticleMeta` schema. Changes to sync logic, storage format, or the OneDrive file layout **must** stay compatible with the PWA's `src/services/graph.ts` and `src/types.ts`.

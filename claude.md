@@ -12,7 +12,7 @@ Transmogrifier is a Microsoft Edge extension (Manifest V3) that transforms web p
 - Live Library updates and in-progress remix display
 - Content script re-injection after extension reload
 - Keyboard shortcuts for article skimming
-- Optional AI image generation via Azure OpenAI or OpenAI (gpt-image-1 / DALL-E 3)
+- Optional AI image generation via Azure OpenAI, OpenAI, or Google Gemini
 - Dark mode support (`prefers-color-scheme`)
 
 ## Architecture Overview
@@ -68,7 +68,7 @@ The PWA also uses delta sync, filters `.json` client-side (no `$filter`), and ca
 4. Content script extracts semantic content (text, structure, metadata)
 5. Service worker sends content + recipe prompt to the configured AI provider
 6. AI returns complete HTML document as JSON
-7. (Optional) Service worker generates images via OpenAI-family provider
+7. (Optional) Service worker generates images via configured image provider
 8. Article saved to IndexedDB with original content for respins
 9. Library auto-refreshes via `ARTICLES_CHANGED` broadcast
 10. (If signed in) Article pushed to OneDrive AppData for cross-device sync
@@ -80,7 +80,7 @@ The PWA also uses delta sync, filters `.json` client-side (no `$filter`), and ca
 | `src/content/content-extractor.ts` | Extracts semantic content from pages |
 | `src/content/index.ts` | Content script message handling |
 | `src/shared/ai-service.ts` | Multi-provider AI integration (Azure OpenAI / OpenAI / Anthropic / Google) |
-| `src/shared/image-service.ts` | Image generation (Azure OpenAI / OpenAI) |
+| `src/shared/image-service.ts` | Image generation (Azure OpenAI / OpenAI / Google Gemini) |
 | `src/shared/config.ts` | Provider selection & env-var loading |
 | `src/shared/storage-service.ts` | IndexedDB article storage (TransmogrifierDB) |
 | `src/shared/auth-service.ts` | Microsoft OAuth2 PKCE authentication |
@@ -285,7 +285,7 @@ VITE_AZURE_OPENAI_API_VERSION=2024-10-21
 # VITE_GOOGLE_API_KEY=AIza...
 # VITE_GOOGLE_MODEL=gemini-2.0-flash
 
-# Image provider: azure-openai | openai | none
+# Image provider: azure-openai | openai | google | none
 # VITE_IMAGE_PROVIDER=azure-openai
 VITE_AZURE_IMAGE_ENDPOINT=https://your-image-resource.openai.azure.com
 VITE_AZURE_IMAGE_API_KEY=your-image-key

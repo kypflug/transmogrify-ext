@@ -5,7 +5,7 @@
  */
 
 export type AIProvider = 'azure-openai' | 'openai' | 'anthropic' | 'google';
-export type ImageProvider = 'azure-openai' | 'openai' | 'none';
+export type ImageProvider = 'azure-openai' | 'openai' | 'google' | 'none';
 
 // --- Provider-specific configs ---
 
@@ -51,11 +51,17 @@ export interface OpenAIImageConfig {
   model: string;
 }
 
+export interface GoogleImageConfig {
+  provider: 'google';
+  apiKey: string;
+  model: string;
+}
+
 export interface NoImageConfig {
   provider: 'none';
 }
 
-export type ImageConfig = AzureImageConfig | OpenAIImageConfig | NoImageConfig;
+export type ImageConfig = AzureImageConfig | OpenAIImageConfig | GoogleImageConfig | NoImageConfig;
 
 // --- Build the active configs from env vars ---
 
@@ -102,6 +108,12 @@ function buildImageConfig(): ImageConfig {
         apiKey: import.meta.env.VITE_OPENAI_API_KEY || import.meta.env.VITE_OPENAI_IMAGE_API_KEY || '',
         model: import.meta.env.VITE_OPENAI_IMAGE_MODEL || 'gpt-image-1',
       };
+    case 'google':
+      return {
+        provider: 'google',
+        apiKey: import.meta.env.VITE_GOOGLE_API_KEY || import.meta.env.VITE_GOOGLE_IMAGE_API_KEY || '',
+        model: import.meta.env.VITE_GOOGLE_IMAGE_MODEL || 'gemini-2.5-flash-image',
+      };
     case 'azure-openai':
       return {
         provider: 'azure-openai',
@@ -145,6 +157,7 @@ export function isImageConfigured(): boolean {
     case 'azure-openai':
       return !!(imageConfig.endpoint && imageConfig.apiKey);
     case 'openai':
+    case 'google':
       return !!imageConfig.apiKey;
     case 'none':
       return false;

@@ -8,7 +8,7 @@ Supports **multiple AI providers** out of the box — Azure OpenAI, OpenAI, Anth
 
 - **AI-Powered Transformation**: Generates complete, standalone HTML documents via your preferred LLM
 - **Multi-Provider Support**: Azure OpenAI, OpenAI, Anthropic (Claude), or Google (Gemini)
-- **AI Image Generation**: Optional image generation via Azure OpenAI or OpenAI
+- **AI Image Generation**: Optional image generation via Azure OpenAI, OpenAI, or Google Gemini
 - **Built-in Recipes**: Focus, Reader, Aesthetic, Illustrated, Visualize, Declutter, Interview, and Custom modes
 - **Pin Favorites**: Pin preferred recipes to the top of the list
 - **Library**: Full two-pane article browser with search, filtering, sorting, and inline reading
@@ -37,7 +37,7 @@ The **Library of Transmogrifia** ([kypflug/transmogrifia-pwa](https://github.com
   - [OpenAI](https://platform.openai.com/api-keys)
   - [Anthropic (Claude)](https://console.anthropic.com/)
   - [Google (Gemini)](https://aistudio.google.com/apikey)
-- (Optional) An image-capable API key (Azure OpenAI or OpenAI) for AI image generation
+- (Optional) An image-capable API key (Azure OpenAI, OpenAI, or Google) for AI image generation
 - (Optional) Azure app registration for OneDrive sync
 
 ### Configuration
@@ -78,7 +78,7 @@ VITE_GOOGLE_MODEL=gemini-2.0-flash
 ```
 
 #### Image Generation (optional)
-Image generation is available with Azure OpenAI or OpenAI. Set `VITE_IMAGE_PROVIDER` and the matching key:
+Image generation is available with Azure OpenAI, OpenAI, or Google Gemini. Set `VITE_IMAGE_PROVIDER` and the matching key:
 
 ```env
 # Azure OpenAI image generation
@@ -95,9 +95,16 @@ VITE_OPENAI_IMAGE_MODEL=gpt-image-1   # or dall-e-3
 # Uses VITE_OPENAI_API_KEY by default, or set VITE_OPENAI_IMAGE_API_KEY
 ```
 
+```env
+# Google Gemini image generation (Nano Banana)
+VITE_IMAGE_PROVIDER=google
+VITE_GOOGLE_IMAGE_MODEL=gemini-2.5-flash-image  # or gemini-3-pro-image-preview
+# Uses VITE_GOOGLE_API_KEY by default, or set VITE_GOOGLE_IMAGE_API_KEY
+```
+
 Set `VITE_IMAGE_PROVIDER=none` (or omit it) to disable image generation entirely.
 
-> **Note:** Anthropic and Google do not currently offer compatible image generation APIs, so image generation is only available with OpenAI-family providers.
+> **Note:** Anthropic does not currently offer an image generation API.
 
 ### Build
 ```bash
@@ -174,7 +181,7 @@ src/
 +-- background/           # Service worker (orchestration)
 +-- shared/               # Types, recipes, services
     +-- ai-service.ts         # Multi-provider AI API (Azure OpenAI / OpenAI / Anthropic / Google)
-    +-- image-service.ts      # Image generation API (Azure OpenAI / OpenAI)
+    +-- image-service.ts      # Image generation API (Azure OpenAI / OpenAI / Google Gemini)
     +-- config.ts             # Provider selection & env-var loading
     +-- storage-service.ts    # IndexedDB storage
     +-- auth-service.ts       # Microsoft OAuth2 PKCE

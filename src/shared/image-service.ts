@@ -1,9 +1,10 @@
 /**
  * Image Generation Service
- * Supports Azure OpenAI (gpt-image-1) and OpenAI direct (gpt-image-1 / DALL-E 3)
+ * Supports Azure OpenAI (gpt-image-1), OpenAI direct (gpt-image-1 / DALL-E 3),
+ * and Google Gemini (gemini-2.5-flash-image / gemini-3-pro-image-preview)
  */
 
-import { imageConfig, isImageConfigured, AzureImageConfig, OpenAIImageConfig } from './config';
+import { imageConfig, isImageConfigured, AzureImageConfig, OpenAIImageConfig, GoogleImageConfig } from './config';
 
 export interface ImageGenerationRequest {
   prompt: string;
@@ -74,6 +75,8 @@ async function generateSingleImage(
       return generateAzureImage(imageConfig, request, id);
     case 'openai':
       return generateOpenAIImage(imageConfig, request, id);
+    case 'google':
+      return generateGoogleImage(imageConfig, request, id);
     case 'none':
       return { id, error: 'Image generation is disabled' };
   }
@@ -176,4 +179,67 @@ async function generateOpenAIImage(
  */
 export function base64ToDataUrl(base64: string, mimeType = 'image/png'): string {
   return `data:${mimeType};base64,${base64}`;
+}
+
+// ─── Google Gemini image generation ──────────────────────────────────────────
+
+async function generateGoogleImage(
+  config: GoogleImageConfig,
+  request: ImageGenerationRequest,
+  id: string
+): Promise<GeneratedImage> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: request.prompt }] }],
+        generationConfig: {
+          responseModalities: ['IMAGE'],
+          imageConfig: {
+            aspectRatio: geminiAspectRatio(request.size),
+          },
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Transmogrifier] Gemini image generation error:', errorText);
+      return { id, error: `API error: ${response.status} ${response.statusText}` };
+    }
+
+    const result = await response.json();
+    const parts = result.candidates?.[0]?.content?.parts;
+    if (!parts) return { id, error: 'No image data returned' };
+
+    // Find the first inline_data part that is an image (skip thought images)
+    const imagePart = parts.find(
+      (p: { inline_data?: { mime_type: string; data: string }; thought?: boolean }) =>
+        p.inline_data && !p.thought
+    );
+    if (!imagePart?.inline_data) return { id, error: 'No image data in response' };
+
+    return {
+      id,
+      base64: imagePart.inline_data.data,
+    };
+  } catch (error) {
+    console.error('[Transmogrifier] Gemini image generation failed:', error);
+    return { id, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+/** Map our size string to a Gemini aspect ratio */
+function geminiAspectRatio(
+  size?: '1024x1024' | '1024x1536' | '1536x1024' | 'auto'
+): string {
+  switch (size) {
+    case '1024x1536': return '2:3';
+    case '1536x1024': return '3:2';
+    case '1024x1024': return '1:1';
+    default: return '1:1';
+  }
 }
