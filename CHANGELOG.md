@@ -2,6 +2,24 @@
 
 All notable changes to Transmogrifier will be documented in this file.
 
+## [0.4.2] - 2026-02-07
+
+### Added
+- **Live Library updates** — Library page automatically picks up new articles without requiring a page refresh
+  - Service worker broadcasts `ARTICLES_CHANGED` after remix, respin, delete, and sync pull
+  - Library listens for broadcast and reloads article list
+- **In-progress transmogrifications in Library** — Active remixes appear in the sidebar with live status
+  - Pending items shown at top of sidebar list with spinner and status label
+  - Clicking a pending item shows a progress reading pane with title, recipe, step, elapsed time, and cancel button
+  - Automatically transitions to the completed article when generation finishes
+  - Polls `chrome.storage.local` every 2s for reliable cross-context state sync
+- **Content script re-injection** — After extension reload, content scripts are automatically re-injected on demand
+  - Catches orphaned content script errors and re-injects JS/CSS from runtime manifest
+  - Eliminates the need to refresh target pages after reloading the extension
+
+### Fixed
+- Content extraction failing with "Could not establish connection" after extension reload/update
+
 ## [0.4.1] - 2026-02-06
 
 ### Fixed

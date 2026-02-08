@@ -329,9 +329,16 @@ export function setupSyncAlarm(): void {
 
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === SYNC_ALARM_NAME) {
-      pullFromCloud().catch(err => {
-        console.error('[Sync] Periodic sync failed:', err);
-      });
+      pullFromCloud()
+        .then(result => {
+          if (result.pulled > 0 || result.deleted > 0) {
+            // Notify open library/viewer pages that articles changed
+            chrome.runtime.sendMessage({ type: 'ARTICLES_CHANGED', reason: 'sync' }).catch(() => {});
+          }
+        })
+        .catch(err => {
+          console.error('[Sync] Periodic sync failed:', err);
+        });
     }
   });
 }

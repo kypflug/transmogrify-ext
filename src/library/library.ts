@@ -14,6 +14,7 @@ import {
   type SavedArticle,
 } from '../shared/storage-service';
 import { BUILT_IN_RECIPES } from '../shared/recipes';
+import type { RemixRequest } from '../shared/types';
 
 // ─── State ───────────────────────────────────────────
 let articles: ArticleSummary[] = [];
@@ -22,6 +23,8 @@ let selectedArticleId: string | null = null;
 let currentArticle: SavedArticle | null = null;
 let focusedIndex = -1;
 let selectedRecipeId = 'focus';
+let activeRemixes: RemixRequest[] = [];
+let selectedPendingId: string | null = null;
 
 // Sidebar width persistence key
 const SIDEBAR_WIDTH_KEY = 'library_sidebar_width';
@@ -75,6 +78,14 @@ const syncBarIcon = document.getElementById('syncBarIcon') as HTMLElement;
 const syncBarText = document.getElementById('syncBarText') as HTMLElement;
 const syncBarBtn = document.getElementById('syncBarBtn') as HTMLButtonElement;
 
+// Progress reading pane
+const readingProgress = document.getElementById('readingProgress') as HTMLElement;
+const progressTitle = document.getElementById('progressTitle') as HTMLElement;
+const progressRecipe = document.getElementById('progressRecipe') as HTMLElement;
+const progressStep = document.getElementById('progressStep') as HTMLElement;
+const progressElapsed = document.getElementById('progressElapsed') as HTMLElement;
+const progressCancel = document.getElementById('progressCancel') as HTMLButtonElement;
+
 // ─── Init ────────────────────────────────────────────
 async function init() {
   restorePreferences();
@@ -82,6 +93,7 @@ async function init() {
   setupEventListeners();
   restoreSidebarWidth();
   await loadArticles();
+  await loadActiveRemixes();
   await loadSyncStatus();
 
   // If URL has ?id=, pre-select that article
@@ -103,6 +115,133 @@ async function loadArticles() {
   } catch (err) {
     console.error('[Library] Failed to load articles:', err);
   }
+}
+
+// ─── Active Remix Tracking ───────────────────────────
+
+async function loadActiveRemixes() {
+  try {
+    const { activeRemixes: stored } = await chrome.storage.local.get('activeRemixes');
+    const allRemixes: Record<string, RemixRequest> = stored || {};
+    const inProgress = Object.values(allRemixes).filter(
+      r => !['complete', 'error', 'idle'].includes(r.status)
+    );
+
+    // Check if a previously-tracked pending item just completed
+    if (selectedPendingId) {
+      const completed = allRemixes[selectedPendingId];
+      if (completed && completed.status === 'complete' && completed.articleId) {
+        selectedPendingId = null;
+        activeRemixes = inProgress;
+        renderList();
+        await loadArticles();
+        await selectArticle(completed.articleId);
+        return;
+      }
+      if (!inProgress.find(r => r.requestId === selectedPendingId)) {
+        // Pending item gone (error/cleaned up)
+        selectedPendingId = null;
+        readingProgress.classList.add('hidden');
+        readingEmpty.classList.remove('hidden');
+      }
+    }
+
+    // Only re-render if something changed
+    const prevIds = activeRemixes.map(r => `${r.requestId}:${r.status}`).join(',');
+    const newIds = inProgress.map(r => `${r.requestId}:${r.status}`).join(',');
+    if (prevIds !== newIds) {
+      activeRemixes = inProgress;
+      renderList();
+    }
+
+    // Update progress pane if a pending item is selected
+    if (selectedPendingId) {
+      const remix = inProgress.find(r => r.requestId === selectedPendingId);
+      if (remix) {
+        showPendingProgress(remix);
+      }
+    }
+  } catch {
+    activeRemixes = [];
+  }
+}
+
+function handleProgressUpdate(requestId: string, progress: RemixRequest) {
+  // Update or insert in our active list
+  const idx = activeRemixes.findIndex(r => r.requestId === requestId);
+  if (['complete', 'error', 'idle'].includes(progress.status)) {
+    // Remove from active list
+    if (idx >= 0) activeRemixes.splice(idx, 1);
+    // If this pending item was selected and it completed, select the new article
+    if (selectedPendingId === requestId) {
+      selectedPendingId = null;
+      if (progress.status === 'complete' && progress.articleId) {
+        // Reload articles then select the new one
+        loadArticles().then(() => selectArticle(progress.articleId!));
+        return;
+      } else {
+        // Error or idle — go back to empty state
+        readingProgress.classList.add('hidden');
+        readingEmpty.classList.remove('hidden');
+      }
+    }
+  } else {
+    if (idx >= 0) {
+      activeRemixes[idx] = progress;
+    } else {
+      activeRemixes.push(progress);
+    }
+    // Update reading pane if this pending item is selected
+    if (selectedPendingId === requestId) {
+      showPendingProgress(progress);
+    }
+  }
+  renderList();
+}
+
+function selectPendingRemix(requestId: string) {
+  const remix = activeRemixes.find(r => r.requestId === requestId);
+  if (!remix) return;
+
+  // Deselect any real article
+  selectedArticleId = null;
+  currentArticle = null;
+  selectedPendingId = requestId;
+
+  // Update list highlight
+  articleList.querySelectorAll('.article-item').forEach(el => el.classList.remove('active'));
+  articleList.querySelectorAll('.article-item-pending').forEach(el => {
+    el.classList.toggle('active', (el as HTMLElement).dataset.requestId === requestId);
+  });
+
+  showPendingProgress(remix);
+
+  // Mobile: switch to reading view
+  if (window.innerWidth < 900) {
+    document.body.classList.add('mobile-reading');
+  }
+}
+
+function showPendingProgress(remix: RemixRequest) {
+  readingEmpty.classList.add('hidden');
+  readingArticle.classList.add('hidden');
+  readingProgress.classList.remove('hidden');
+
+  progressTitle.textContent = remix.pageTitle || 'Transmogrifying…';
+
+  const recipe = BUILT_IN_RECIPES.find(r => r.id === remix.recipeId);
+  progressRecipe.textContent = recipe ? `${recipe.icon} ${recipe.name}` : remix.recipeId;
+
+  const statusLabels: Record<string, string> = {
+    'extracting': '📄 Extracting page content…',
+    'analyzing': '🤖 AI is generating HTML…',
+    'generating-images': '🎨 Generating images…',
+    'saving': '💾 Saving article…',
+  };
+  progressStep.textContent = statusLabels[remix.status] || remix.step || remix.status;
+
+  const elapsed = Math.round((Date.now() - remix.startTime) / 1000);
+  progressElapsed.textContent = elapsed > 0 ? `${elapsed}s elapsed` : '';
 }
 
 function applyFilterAndSort() {
@@ -150,18 +289,50 @@ function renderList() {
   // Toggle empty state
   const hasArticles = articles.length > 0;
   const hasResults = filteredArticles.length > 0;
+  const hasPending = activeRemixes.length > 0;
 
-  sidebarEmpty.classList.toggle('hidden', hasArticles);
-  articleList.classList.toggle('hidden', !hasArticles);
+  sidebarEmpty.classList.toggle('hidden', hasArticles || hasPending);
+  articleList.classList.toggle('hidden', !hasArticles && !hasPending);
   sidebarFooter.classList.toggle('hidden', !hasArticles);
 
-  if (!hasArticles) {
+  if (!hasArticles && !hasPending) {
     articleList.innerHTML = '';
     return;
   }
 
+  // Render pending remixes at the top
+  const pendingHtml = activeRemixes.map(remix => {
+    const isActive = remix.requestId === selectedPendingId;
+    const recipe = BUILT_IN_RECIPES.find(r => r.id === remix.recipeId);
+    const recipeIcon = recipe?.icon ?? '📄';
+    const recipeName = recipe?.name || remix.recipeId;
+    const statusLabels: Record<string, string> = {
+      'extracting': 'Extracting…',
+      'analyzing': 'Generating…',
+      'generating-images': 'Images…',
+      'saving': 'Saving…',
+    };
+    const statusText = statusLabels[remix.status] || remix.step || remix.status;
+    const title = remix.pageTitle || 'Transmogrifying…';
+
+    return `
+      <div class="article-item-pending${isActive ? ' active' : ''}"
+           data-request-id="${remix.requestId}">
+        <div class="pending-spinner"></div>
+        <div class="pending-content">
+          <div class="article-item-title">${escapeHtml(title)}</div>
+          <div class="article-item-meta">
+            <span class="article-item-recipe">${recipeIcon} ${escapeHtml(recipeName)}</span>
+            <span class="article-item-dot">·</span>
+            <span class="pending-status">${escapeHtml(statusText)}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
   if (!hasResults) {
-    articleList.innerHTML = `
+    articleList.innerHTML = pendingHtml + `
       <div class="no-results">
         <div class="no-results-icon">🔍</div>
         <p>No matching articles</p>
@@ -170,7 +341,7 @@ function renderList() {
     return;
   }
 
-  articleList.innerHTML = filteredArticles.map((article, index) => {
+  articleList.innerHTML = pendingHtml + filteredArticles.map((article, index) => {
     const isActive = article.id === selectedArticleId;
     const isFocused = index === focusedIndex;
     const favStar = article.isFavorite
@@ -208,7 +379,11 @@ async function updateFooter() {
 
 async function selectArticle(id: string) {
   selectedArticleId = id;
+  selectedPendingId = null;
   focusedIndex = filteredArticles.findIndex(a => a.id === id);
+
+  // Hide progress pane if it was showing
+  readingProgress.classList.add('hidden');
 
   // Update list highlight
   articleList.querySelectorAll('.article-item').forEach(el => {
@@ -260,10 +435,12 @@ async function selectArticle(id: string) {
 
 function clearSelection() {
   selectedArticleId = null;
+  selectedPendingId = null;
   currentArticle = null;
   focusedIndex = -1;
   readingEmpty.classList.remove('hidden');
   readingArticle.classList.add('hidden');
+  readingProgress.classList.add('hidden');
   document.title = 'Transmogrifications';
 
   articleList.querySelectorAll('.article-item').forEach(el => {
@@ -427,6 +604,12 @@ function fixAnchorLinks() {
 function setupEventListeners() {
   // Article list click
   articleList.addEventListener('click', e => {
+    // Check for pending item click
+    const pendingItem = (e.target as HTMLElement).closest('.article-item-pending') as HTMLElement | null;
+    if (pendingItem?.dataset.requestId) {
+      selectPendingRemix(pendingItem.dataset.requestId);
+      return;
+    }
     const item = (e.target as HTMLElement).closest('.article-item') as HTMLElement | null;
     if (item?.dataset.id) {
       selectArticle(item.dataset.id);
@@ -515,6 +698,43 @@ function setupEventListeners() {
   // Sync bar
   syncBarBtn.addEventListener('click', handleSyncNow);
   syncBarText.addEventListener('click', handleSyncSignIn);
+
+  // Listen for article changes and progress updates from service worker
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.type === 'ARTICLES_CHANGED') {
+      console.log('[Library] Articles changed:', message.reason);
+      loadArticles();
+    } else if (message.type === 'PROGRESS_UPDATE' && message.requestId && message.progress) {
+      handleProgressUpdate(message.requestId, message.progress);
+    }
+  });
+
+  // Poll for active remixes every 2s — most reliable cross-context mechanism
+  setInterval(() => loadActiveRemixes(), 2000);
+
+  // Cancel pending remix
+  progressCancel.addEventListener('click', async () => {
+    if (!selectedPendingId) return;
+    try {
+      await chrome.runtime.sendMessage({
+        type: 'CANCEL_REMIX',
+        payload: { requestId: selectedPendingId },
+      });
+    } catch {
+      // ignore
+    }
+  });
+
+  // Update elapsed time for pending items every second
+  setInterval(() => {
+    if (selectedPendingId) {
+      const remix = activeRemixes.find(r => r.requestId === selectedPendingId);
+      if (remix) {
+        const elapsed = Math.round((Date.now() - remix.startTime) / 1000);
+        progressElapsed.textContent = elapsed > 0 ? `${elapsed}s elapsed` : '';
+      }
+    }
+  }, 1000);
 }
 
 // ─── Keyboard ────────────────────────────────────────

@@ -33,6 +33,14 @@ import {
 // In-memory storage for AbortControllers (per request)
 const abortControllers = new Map<string, AbortController>();
 
+/**
+ * Broadcast to any open extension pages (library, viewer) that articles changed.
+ * Failures are expected when no listeners are open.
+ */
+function broadcastArticlesChanged(reason: string) {
+  chrome.runtime.sendMessage({ type: 'ARTICLES_CHANGED', reason }).catch(() => {});
+}
+
 // In-memory storage for elapsed time intervals
 const elapsedIntervals = new Map<string, ReturnType<typeof setInterval>>();
 
@@ -373,6 +381,7 @@ async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
         const delId = message.payload?.articleId || '';
         await deleteArticle(delId);
         pushDeleteToCloud(delId).catch(() => {});
+        broadcastArticlesChanged('delete');
         return { success: true };
       } catch (error) {
         return { success: false, error: String(error) };
@@ -581,7 +590,30 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
   let content: string;
   try {
     console.log('[Transmogrifier] Requesting content extraction...');
-    const extractResponse = await chrome.tabs.sendMessage(tabId, { type: 'EXTRACT_CONTENT' });
+    let extractResponse;
+    try {
+      extractResponse = await chrome.tabs.sendMessage(tabId, { type: 'EXTRACT_CONTENT' });
+    } catch {
+      // Content script likely not injected (e.g. after extension reload).
+      // Re-inject and retry.
+      console.log('[Transmogrifier] Content script not reachable, re-injecting...');
+      const manifest = chrome.runtime.getManifest();
+      const contentScriptJs = manifest.content_scripts?.[0]?.js ?? [];
+      const contentScriptCss = manifest.content_scripts?.[0]?.css ?? [];
+      if (contentScriptJs.length > 0) {
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          files: contentScriptJs,
+        });
+      }
+      if (contentScriptCss.length > 0) {
+        await chrome.scripting.insertCSS({
+          target: { tabId },
+          files: contentScriptCss,
+        });
+      }
+      extractResponse = await chrome.tabs.sendMessage(tabId, { type: 'EXTRACT_CONTENT' });
+    }
     if (!extractResponse?.success || !extractResponse.content) {
       const error = extractResponse?.error || 'Failed to extract content';
       await updateRemixProgress(requestId, { status: 'error', error });
@@ -695,6 +727,9 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
     
     // Push to cloud in background (non-blocking)
     pushArticleToCloud(savedArticle).catch(() => {});
+    
+    // Notify open library/viewer pages
+    broadcastArticlesChanged('remix');
     
     // Open the viewer page
     const viewerUrl = chrome.runtime.getURL(`src/viewer/viewer.html?id=${savedArticle.id}`);
@@ -852,6 +887,9 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
 
   // Push to cloud in background
   pushArticleToCloud(newArticle).catch(() => {});
+  
+  // Notify open library/viewer pages
+  broadcastArticlesChanged('respin');
   
   await updateRemixProgress(requestId, { 
     status: 'complete', 

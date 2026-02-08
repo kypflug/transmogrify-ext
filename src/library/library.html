@@ -73,6 +73,18 @@
         <p>Select an article to read</p>
       </div>
 
+      <!-- In-progress transmogrification -->
+      <div class="reading-progress hidden" id="readingProgress">
+        <div class="progress-card">
+          <div class="progress-spinner-lg"></div>
+          <h2 class="progress-page-title" id="progressTitle">Transmogrifying…</h2>
+          <div class="progress-recipe" id="progressRecipe"></div>
+          <div class="progress-step" id="progressStep">Starting…</div>
+          <div class="progress-elapsed" id="progressElapsed"></div>
+          <button class="progress-cancel-btn" id="progressCancel">Cancel</button>
+        </div>
+      </div>
+
       <!-- Article view -->
       <div class="reading-article hidden" id="readingArticle">
         <header class="article-header">
