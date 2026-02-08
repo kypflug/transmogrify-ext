@@ -269,7 +269,9 @@ chrome.runtime.onMessage.addListener(
 async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
   switch (message.type) {
     case 'AI_ANALYZE': {
-      return await performRemix(message);
+      // Fire-and-forget: kick off the remix in the background so the popup can close immediately
+      performRemix(message).catch(err => console.error('[Transmogrifier] Remix failed:', err));
+      return { success: true };
     }
 
     case 'GET_ACTIVE_REMIXES': {
@@ -730,10 +732,6 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
     
     // Notify open library/viewer pages
     broadcastArticlesChanged('remix');
-    
-    // Open the viewer page
-    const viewerUrl = chrome.runtime.getURL(`src/viewer/viewer.html?id=${savedArticle.id}`);
-    await chrome.tabs.create({ url: viewerUrl, active: true });
     
     await updateRemixProgress(requestId, { 
       status: 'complete', 

@@ -902,3 +902,59 @@ body {
   border-color: var(--edge-red);
   color: var(--edge-red);
 }
+
+/* ─── Keyboard Shortcut Legend ─── */
+.shortcut-legend {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: var(--edge-surface-raised);
+  border: 1px solid var(--edge-border);
+  border-radius: var(--edge-radius-lg);
+  padding: 10px 14px;
+  box-shadow: var(--edge-shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  z-index: 50;
+  opacity: 0.55;
+  transition: opacity 0.2s;
+}
+
+.shortcut-legend:hover {
+  opacity: 1;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--edge-text-secondary);
+  white-space: nowrap;
+}
+
+.shortcut-row kbd {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 5px;
+  background: var(--edge-surface-sunken);
+  border: 1px solid var(--edge-border);
+  border-radius: 3px;
+  font-family: var(--lib-font);
+  font-size: 10px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--edge-text-primary);
+  line-height: 1.5;
+}
+
+.shortcut-row span {
+  margin-left: 4px;
+}
+
+@media (max-width: 899px) {
+  .shortcut-legend {
+    display: none;
+  }
+}

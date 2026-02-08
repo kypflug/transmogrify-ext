@@ -36,7 +36,8 @@ const elements = {
   customPrompt: document.getElementById('customPrompt') as HTMLTextAreaElement,
   explanationSection: document.getElementById('explanationSection')!,
   explanationText: document.getElementById('explanationText')!,
-  remixBtn: document.getElementById('remixBtn')!,
+  remixReadBtn: document.getElementById('remixReadBtn')!,
+  remixSendBtn: document.getElementById('remixSendBtn')!,
   generateImages: document.getElementById('generateImages') as HTMLInputElement,
   imageToggleSection: document.querySelector('.image-toggle-section') as HTMLElement,
 };
@@ -292,8 +293,9 @@ function setupEventListeners() {
     }
   });
   
-  // Remix button
-  elements.remixBtn.addEventListener('click', applyRemix);
+  // Remix buttons
+  elements.remixReadBtn.addEventListener('click', () => applyRemix('library'));
+  elements.remixSendBtn.addEventListener('click', () => applyRemix('none'));
   
   // Active remixes list - cancel button
   activeRemixesList.addEventListener('click', (e) => {
@@ -338,8 +340,9 @@ function selectRecipe(recipeId: string) {
 }
 /**
  * Apply AI remix to the page
+ * @param navigate - 'library' opens library to in-progress item, 'none' closes popup silently
  */
-async function applyRemix() {
+async function applyRemix(navigate: 'library' | 'none') {
   const generateImages = elements.generateImages?.checked ?? false;
   
   try {
@@ -349,6 +352,7 @@ async function applyRemix() {
         recipeId: selectedRecipeId,
         customPrompt: selectedRecipeId === 'custom' ? elements.customPrompt.value : undefined,
         generateImages,
+        navigate,
       },
     };
     
@@ -356,24 +360,13 @@ async function applyRemix() {
     const response = await chrome.runtime.sendMessage(message);
     
     if (response?.success) {
-      // Refresh the active remixes list
-      await loadActiveRemixes();
-      
-      // Show explanation if available
-      if (response.aiExplanation) {
-        elements.explanationText.textContent = response.aiExplanation;
-        elements.explanationSection.style.display = 'block';
+      if (navigate === 'library') {
+        // Open library and close popup
+        const url = chrome.runtime.getURL('src/library/library.html');
+        chrome.tabs.create({ url });
       }
-      
-      elements.statusIndicator.textContent = 'Saved';
-      elements.statusIndicator.classList.remove('error');
-      elements.statusIndicator.classList.add('success');
-      
-      // Reset status after a delay
-      setTimeout(() => {
-        elements.statusIndicator.textContent = 'Ready';
-        elements.statusIndicator.classList.remove('success');
-      }, 3000);
+      // Both options dismiss the popup
+      window.close();
     } else if (response?.error) {
       showError(response.error);
     }

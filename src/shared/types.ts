@@ -80,6 +80,7 @@ export interface RemixPayload {
   aiResponse?: AIResponse;
   generatedImages?: GeneratedImageData[];
   generateImages?: boolean;
+  navigate?: 'library' | 'none'; // Where to go after starting transmogrification
   settings?: Partial<UserPreferences>;
   articleId?: string; // For article operations
   requestId?: string; // For parallel remix tracking

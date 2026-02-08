@@ -469,12 +469,18 @@ body {
   gap: 0;
 }
 
+.btn-group {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+
 .primary-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  width: 100%;
+  flex: 1;
   padding: 11px;
   border: none;
   border-radius: var(--edge-radius);
@@ -494,6 +500,34 @@ body {
 }
 
 .primary-btn:active {
+  transform: scale(0.99);
+}
+
+.secondary-send-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 11px 14px;
+  border: 1.5px solid var(--edge-border);
+  border-radius: var(--edge-radius);
+  background: var(--edge-surface-raised);
+  color: var(--edge-text-secondary);
+  font-family: var(--popup-font);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.secondary-send-btn:hover {
+  border-color: var(--edge-teal);
+  color: var(--edge-teal-dark);
+  background: var(--edge-teal-light);
+}
+
+.secondary-send-btn:active {
   transform: scale(0.99);
 }
 

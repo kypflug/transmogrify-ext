@@ -2,7 +2,7 @@
 
 All notable changes to Transmogrifier will be documented in this file.
 
-## [0.4.2] - 2026-02-07
+## [0.4.3] - 2026-02-07
 
 ### Added
 - **Live Library updates** — Library page automatically picks up new articles without requiring a page refresh
@@ -16,9 +16,32 @@ All notable changes to Transmogrifier will be documented in this file.
 - **Content script re-injection** — After extension reload, content scripts are automatically re-injected on demand
   - Catches orphaned content script errors and re-injects JS/CSS from runtime manifest
   - Eliminates the need to refresh target pages after reloading the extension
+- **Keyboard shortcuts for article skimming** — `j`/`k` (or ↑/↓) now select and open the next/previous article instantly; `f` toggles favorite; `Delete` prompts deletion
+  - After deleting, the next article is automatically selected (or previous if at end of list)
+- **Shortcut legend** — Floating keyboard shortcut reference in the bottom-right corner of the Library
+
+### Changed
+- **Popup buttons split** — Single "Transmogrify → New Tab" button replaced with two options:
+  - **✨ Transmogrify & Read** (primary) — Starts the job and opens the Library to watch progress
+  - **📥 Send to Library** (secondary) — Starts the job silently for "read later"; no navigation
+  - Both options dismiss the popup immediately
+- **Fire-and-forget remix** — `AI_ANALYZE` handler returns immediately so the popup can close; remix runs in background
+- Completed transmogrifications no longer auto-open a viewer tab; articles land in the Library
+- **Save FAB hidden in Library** — The floating save button injected by the meta prompt is hidden when viewing articles in the Library iframe (redundant with the header save button)
 
 ### Fixed
 - Content extraction failing with "Could not establish connection" after extension reload/update
+
+## [0.4.2] - 2026-02-06
+
+### Added
+- **Content extraction overhaul** — 27 CMS-specific selectors in `findMainContent()` covering WordPress, Future plc, Vox Media, Medium, Substack, and generic attribute patterns like `[itemprop="articleBody"]` and `[class*="article-body"]`
+  - Div/section/span-as-paragraph fallback for CMS systems that don't use `<p>` tags
+- **Tab restoration on reload** — `restoreViewerTabs()` refreshes invalidated viewer/library tabs when the extension updates
+
+### Fixed
+- **Extraction performance** — Removed `getComputedStyle()` from the DOM walk; replaced with cheap tag/class/id/attribute checks; fixes multi-second stalls on heavy pages
+- **SVGAnimatedString guard** — Check on `el.className` prevents crashes on pages with inline SVGs
 
 ## [0.4.1] - 2026-02-06
 

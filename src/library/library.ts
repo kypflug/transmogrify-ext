@@ -414,8 +414,9 @@ async function selectArticle(id: string) {
     favoriteIcon.textContent = currentArticle.isFavorite ? '★' : '☆';
     btnFavorite.classList.toggle('active', currentArticle.isFavorite);
 
-    // Render content in iframe
-    contentFrame.srcdoc = currentArticle.html;
+    // Render content in iframe (hide the save FAB — redundant with header save button)
+    const fabHideStyle = '<style>.remix-save-fab { display: none !important; }</style>';
+    contentFrame.srcdoc = currentArticle.html.replace('</head>', fabHideStyle + '</head>');
     contentFrame.addEventListener('load', fixAnchorLinks, { once: true });
 
     // Mobile: switch to reading view
@@ -501,14 +502,24 @@ function handleDeletePrompt() {
 async function handleDeleteConfirm() {
   if (!currentArticle) return;
   const id = currentArticle.id;
+  const deletedIndex = filteredArticles.findIndex(a => a.id === id);
   deleteModal.classList.add('hidden');
   try {
     await deleteArticle(id);
     articles = articles.filter(a => a.id !== id);
     applyFilterAndSort();
-    clearSelection();
     renderList();
     await updateFooter();
+
+    // Auto-select next article (or previous if we deleted the last one)
+    if (filteredArticles.length > 0) {
+      const nextIndex = Math.min(deletedIndex, filteredArticles.length - 1);
+      focusedIndex = nextIndex;
+      await selectArticle(filteredArticles[nextIndex].id);
+      updateFocusHighlight();
+    } else {
+      clearSelection();
+    }
   } catch (err) {
     console.error('[Library] Delete failed:', err);
   }
@@ -778,14 +789,20 @@ function handleKeyboard(e: KeyboardEvent) {
     case 'ArrowDown':
     case 'j': {
       e.preventDefault();
-      focusedIndex = Math.min(focusedIndex + 1, len - 1);
+      const nextIdx = Math.min(focusedIndex + 1, len - 1);
+      if (nextIdx !== focusedIndex || focusedIndex === -1) {
+        focusedIndex = nextIdx === -1 ? 0 : nextIdx;
+      }
+      selectArticle(filteredArticles[focusedIndex].id);
       updateFocusHighlight();
       break;
     }
     case 'ArrowUp':
     case 'k': {
       e.preventDefault();
-      focusedIndex = Math.max(focusedIndex - 1, 0);
+      const prevIdx = Math.max(focusedIndex - 1, 0);
+      focusedIndex = prevIdx;
+      selectArticle(filteredArticles[focusedIndex].id);
       updateFocusHighlight();
       break;
     }
