@@ -417,7 +417,10 @@ async function selectArticle(id: string) {
     // Render content in iframe (hide the save FAB — redundant with header save button)
     const fabHideStyle = '<style>.remix-save-fab { display: none !important; }</style>';
     contentFrame.srcdoc = currentArticle.html.replace('</head>', fabHideStyle + '</head>');
-    contentFrame.addEventListener('load', fixAnchorLinks, { once: true });
+    contentFrame.addEventListener('load', () => {
+      fixAnchorLinks();
+      forwardIframeKeyboard();
+    }, { once: true });
 
     // Mobile: switch to reading view
     if (window.innerWidth < 900) {
@@ -610,6 +613,39 @@ function fixAnchorLinks() {
   }
 }
 
+/**
+ * Forward keyboard shortcuts from the iframe to the parent so
+ * j/k/f/Delete// work even when focus is in the article pane.
+ */
+function forwardIframeKeyboard() {
+  try {
+    const iframeDoc = contentFrame.contentDocument;
+    if (!iframeDoc) return;
+    iframeDoc.addEventListener('keydown', (e: KeyboardEvent) => {
+      // Don't intercept if user is typing in an input inside the iframe
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+      const dominated = ['j', 'k', 'f', '/', 'ArrowDown', 'ArrowUp', 'Enter', 'Delete', 'Escape'];
+      if (dominated.includes(e.key) || ((e.ctrlKey || e.metaKey) && e.key === 'f')) {
+        e.preventDefault();
+        // Re-dispatch on the parent document so handleKeyboard picks it up
+        document.dispatchEvent(new KeyboardEvent('keydown', {
+          key: e.key,
+          code: e.code,
+          ctrlKey: e.ctrlKey,
+          metaKey: e.metaKey,
+          shiftKey: e.shiftKey,
+          altKey: e.altKey,
+          bubbles: true,
+        }));
+      }
+    });
+  } catch {
+    // cross-origin — ignore
+  }
+}
+
 // ─── Event Setup ─────────────────────────────────────
 
 function setupEventListeners() {
@@ -761,6 +797,14 @@ function handleKeyboard(e: KeyboardEvent) {
     return;
   }
 
+  // Ctrl+F / Cmd+F → focus search (check before single-key handlers)
+  if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+    e.preventDefault();
+    searchInput.focus();
+    searchInput.select();
+    return;
+  }
+
   // Close modals on Escape
   if (e.key === 'Escape') {
     if (!respinModal.classList.contains('hidden')) {
@@ -819,6 +863,12 @@ function handleKeyboard(e: KeyboardEvent) {
       }
       break;
     }
+    case '/': {
+      e.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+      break;
+    }
     case 'Delete': {
       if (currentArticle) {
         handleDeletePrompt();
@@ -826,13 +876,6 @@ function handleKeyboard(e: KeyboardEvent) {
       }
       break;
     }
-  }
-
-  // Ctrl+F / Cmd+F → focus search
-  if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-    e.preventDefault();
-    searchInput.focus();
-    searchInput.select();
   }
 }
 
