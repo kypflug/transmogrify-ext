@@ -9,6 +9,9 @@ Transmogrifier is a Microsoft Edge extension (Manifest V3) that transforms web p
 - Full Library page for browsing, reading, and managing articles
 - OneDrive sync for cross-device article sharing
 - Parallel Transmogrify support with independent progress tracking
+- Live Library updates and in-progress remix display
+- Content script re-injection after extension reload
+- Keyboard shortcuts for article skimming
 - Optional AI image generation via gpt-image-1.5
 - Dark mode support (`prefers-color-scheme`)
 
@@ -36,15 +39,16 @@ Transmogrifier is a Microsoft Edge extension (Manifest V3) that transforms web p
 ```
 
 **Flow:**
-1. User selects a recipe and clicks "Transmogrify -> New Tab"
-2. Service worker generates a unique request ID for tracking
-3. Content script extracts semantic content (text, structure, metadata)
-4. Service worker sends content + recipe prompt to GPT-5.2
-5. AI returns complete HTML document as JSON
-6. (Optional) Service worker generates images via gpt-image-1.5
-7. Article saved to IndexedDB with original content for respins
-8. Viewer page opens displaying the transmogrified article
-9. (If signed in) Article pushed to OneDrive AppData for cross-device sync
+1. User selects a recipe and clicks **"✨ Transmogrify & Read"** (opens Library) or **"📥 Send to Library"** (silent)
+2. Popup dismisses immediately; service worker fires the remix in the background
+3. Service worker generates a unique request ID for tracking
+4. Content script extracts semantic content (text, structure, metadata)
+5. Service worker sends content + recipe prompt to GPT-5.2
+6. AI returns complete HTML document as JSON
+7. (Optional) Service worker generates images via gpt-image-1.5
+8. Article saved to IndexedDB with original content for respins
+9. Library auto-refreshes via `ARTICLES_CHANGED` broadcast
+10. (If signed in) Article pushed to OneDrive AppData for cross-device sync
 
 ## Key Files & Responsibilities
 
@@ -59,7 +63,7 @@ Transmogrifier is a Microsoft Edge extension (Manifest V3) that transforms web p
 | `src/shared/onedrive-service.ts` | OneDrive Graph API client |
 | `src/shared/sync-service.ts` | Bidirectional sync orchestrator |
 | `src/shared/recipes.ts` | Built-in prompts and response format |
-| `src/popup/popup.ts` | Recipe picker + library link (no tabs) |
+| `src/popup/popup.ts` | Recipe picker + split action buttons (no tabs) |
 | `src/library/library.ts` | Full two-pane article browser |
 | `src/viewer/viewer.ts` | Article viewer with toolbar |
 | `src/background/service-worker.ts` | Orchestrates parallel jobs + sync |
@@ -195,9 +199,13 @@ The Library (`src/library/`) is a full-page article browser opened from the popu
 - **Article actions**: Favorite, Save/Export, Original link, New Tab, Respin, Delete
 - **Respin modal**: Pick new recipe + optional custom prompt to re-transform
 - **New Tab**: Opens article as a standalone blob URL page
-- **Keyboard navigation**: Arrow keys, Enter, / to focus search
+- **Keyboard shortcuts**: `j`/`k` or `↑`/`↓` to browse and open, `f` to favorite, `Delete` to remove, `/` to search
+- **Shortcut legend**: Floating reference in the bottom-right corner
+- **In-progress remixes**: Active jobs shown at top of sidebar with live status, spinner, and cancel button
+- **Live updates**: Sidebar auto-refreshes via `ARTICLES_CHANGED` broadcast from service worker
 - **Resizable sidebar**: Drag handle between panes
 - **Sync bar**: Sign-in status, manual sync button
+- **Save FAB hidden**: The floating save button is hidden in the Library iframe (redundant with header save button)
 
 ## OneDrive Sync
 

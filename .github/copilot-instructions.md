@@ -12,7 +12,7 @@ TypeScript (strict) | Vite | Vanilla TS | Azure OpenAI | IndexedDB | Microsoft G
 ```
 src/
   content/         # Content extraction from pages
-  popup/           # Recipe picker + library link (no tabs)
+  popup/           # Recipe picker + split action buttons (no tabs)
   library/         # Full-page two-pane article browser
   viewer/          # Article viewer page
   background/      # Service worker (orchestration + sync)

@@ -13,6 +13,10 @@ An AI-powered Microsoft Edge extension that "transmogrifies" web pages into beau
 - **OneDrive Sync**: Sign in with a Microsoft account to sync articles across devices via OneDrive AppData
 - **Respin**: Re-transform saved articles with different recipes
 - **Parallel Jobs**: Run multiple jobs simultaneously with independent progress tracking
+- **Live Library Updates**: Library auto-refreshes when articles are added, deleted, or synced
+- **In-Progress Tracking**: Active remixes appear in the Library sidebar with live status
+- **Content Script Re-injection**: Automatically re-injects content scripts after extension reload
+- **Keyboard Shortcuts**: `j`/`k` to browse articles, `f` to favorite, `Delete` to remove, `/` to search
 - **Dark Mode**: All recipes respect `prefers-color-scheme`
 - **New Tab View**: Open any article as a clean standalone page
 - **Export**: Save articles as standalone HTML files
@@ -57,8 +61,8 @@ npm run build
 2. Click the Transmogrifier extension icon
 3. Choose a recipe (Focus, Reader, Illustrated, etc.)
 4. (Optional) Toggle "Generate AI Images" for visual enhancements
-5. Click "Transmogrify -> New Tab"
-6. The AI generates a beautiful new version in a viewer tab
+5. Click **"✨ Transmogrify & Read"** to start the job and open the Library, or **"📥 Send to Library"** to queue it silently
+6. The popup dismisses immediately; the AI generates the article in the background
 7. Articles are automatically saved and browsable in the Library
 
 ### Library
@@ -68,11 +72,13 @@ Click "Library" in the popup to open the full Library view. The Library provides
 - Inline article reading in a sandboxed iframe
 - Action bar: Favorite, Save, Original link, New Tab view, Respin, Delete
 - Resizable sidebar with drag handle
-- Keyboard navigation (Up/Down to browse, Enter to select, / to search)
+- Keyboard shortcuts: `j`/`k` or `↑`/`↓` to browse and open articles, `f` to favorite, `Delete` to remove, `/` to search
+- Floating shortcut legend in the bottom-right corner
+- In-progress remixes shown at the top of the sidebar with live status and cancel button
 - Sync status bar with sign-in and manual sync
 
 ### Parallel Jobs
-You can start multiple jobs on different tabs simultaneously. The popup shows all Active Jobs with progress and cancel buttons.
+You can start multiple jobs on different tabs simultaneously. Active jobs appear in the popup and the Library sidebar with live progress and cancel buttons.
 
 ### Respin
 Open a saved article and click "Respin" to re-transform it with a different recipe without re-extracting from the original page.
@@ -124,10 +130,7 @@ src/
 
 ## Documentation
 - [claude.md](./claude.md) - AI development guide
-- [spec.md](./spec.md) - Product specification
 - [CHANGELOG.md](./CHANGELOG.md) - Version history
-- [docs/parallel-remix-plan.md](./docs/parallel-remix-plan.md) - Parallel Transmogrify architecture
-- [docs/onedrive-sync-plan.md](./docs/onedrive-sync-plan.md) - OneDrive sync design
 
 ## License
 MIT
