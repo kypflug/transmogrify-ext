@@ -1,7 +1,7 @@
 ﻿# Transmogrifier - AI Development Guide
 
 ## Project Context
-Transmogrifier is a Microsoft Edge extension (Manifest V3) that transforms web pages into beautiful, focused reading experiences using **AI-powered HTML generation**. It extracts semantic content from pages and uses GPT-5.2 to generate complete, standalone HTML documents.
+Transmogrifier is a Microsoft Edge extension (Manifest V3) that transforms web pages into beautiful, focused reading experiences using **AI-powered HTML generation**. It extracts semantic content from pages and sends it to a configurable AI provider (Azure OpenAI, OpenAI, Anthropic Claude, or Google Gemini) to generate complete, standalone HTML documents.
 
 **Key Features**:
 - Complete HTML generation (not DOM mutation)
@@ -12,7 +12,7 @@ Transmogrifier is a Microsoft Edge extension (Manifest V3) that transforms web p
 - Live Library updates and in-progress remix display
 - Content script re-injection after extension reload
 - Keyboard shortcuts for article skimming
-- Optional AI image generation via gpt-image-1.5
+- Optional AI image generation via Azure OpenAI or OpenAI (gpt-image-1 / DALL-E 3)
 - Dark mode support (`prefers-color-scheme`)
 
 ## Architecture Overview
@@ -49,8 +49,8 @@ The PWA also uses delta sync, filters `.json` client-side (no `$filter`), and ca
               +-------------------+-------------------+
               |                   |                   |
      +--------v--------+ +-------v------+ +----------v-------+
-     |  Azure OpenAI   | |  IndexedDB   | |  Viewer Page     |
-     | GPT-5.2 + img   | |  (storage)   | |  (display)       |
+     |  AI Provider    | |  IndexedDB   | |  Viewer Page     |
+     | (configurable)  | |  (storage)   | |  (display)       |
      +-----------------+ +-------+------+ +------------------+
                                   |
               +-------------------+-------------------+
@@ -66,9 +66,9 @@ The PWA also uses delta sync, filters `.json` client-side (no `$filter`), and ca
 2. Popup dismisses immediately; service worker fires the remix in the background
 3. Service worker generates a unique request ID for tracking
 4. Content script extracts semantic content (text, structure, metadata)
-5. Service worker sends content + recipe prompt to GPT-5.2
+5. Service worker sends content + recipe prompt to the configured AI provider
 6. AI returns complete HTML document as JSON
-7. (Optional) Service worker generates images via gpt-image-1.5
+7. (Optional) Service worker generates images via OpenAI-family provider
 8. Article saved to IndexedDB with original content for respins
 9. Library auto-refreshes via `ARTICLES_CHANGED` broadcast
 10. (If signed in) Article pushed to OneDrive AppData for cross-device sync
@@ -79,8 +79,9 @@ The PWA also uses delta sync, filters `.json` client-side (no `$filter`), and ca
 |------|---------|
 | `src/content/content-extractor.ts` | Extracts semantic content from pages |
 | `src/content/index.ts` | Content script message handling |
-| `src/shared/ai-service.ts` | Azure OpenAI GPT-5.2 integration |
-| `src/shared/image-service.ts` | Azure OpenAI gpt-image-1.5 integration |
+| `src/shared/ai-service.ts` | Multi-provider AI integration (Azure OpenAI / OpenAI / Anthropic / Google) |
+| `src/shared/image-service.ts` | Image generation (Azure OpenAI / OpenAI) |
+| `src/shared/config.ts` | Provider selection & env-var loading |
 | `src/shared/storage-service.ts` | IndexedDB article storage (TransmogrifierDB) |
 | `src/shared/auth-service.ts` | Microsoft OAuth2 PKCE authentication |
 | `src/shared/onedrive-service.ts` | OneDrive Graph API client |
@@ -156,7 +157,7 @@ interface AIResponse {
 
 interface ImagePlaceholder {
   id: string;           // e.g., "hero-image"
-  prompt: string;       // Detailed prompt for gpt-image-1.5
+  prompt: string;       // Detailed prompt for image generation
   size?: string;        // "1024x1024" | "1024x1536" | "1536x1024"
   style?: string;       // "natural" | "vivid"
   altText: string;      // Accessibility
@@ -171,7 +172,7 @@ Images are inserted via `{{image-id}}` placeholders in the HTML src attributes.
 When the user enables "Generate AI Images":
 1. Recipe's `supportsImages: true` adds image instructions to prompt
 2. AI returns `images` array with prompts and placements
-3. Service worker calls gpt-image-1.5 for each image
+3. Service worker calls the configured image provider for each image
 4. Images returned as base64, converted to data URLs
 5. Placeholders (`{{image-id}}`) replaced in HTML before saving
 
@@ -260,15 +261,32 @@ Cross-device article sync via Microsoft Graph API:
 
 ## Environment Configuration
 
-Create `.env` with:
+Create `.env` based on `.env.example`. Set `VITE_AI_PROVIDER` to choose your LLM backend:
+
 ```
-# GPT-5.2 for HTML generation
+# Provider: azure-openai | openai | anthropic | google
+VITE_AI_PROVIDER=azure-openai
+
+# --- Azure OpenAI example ---
 VITE_AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
 VITE_AZURE_OPENAI_API_KEY=your-key
 VITE_AZURE_OPENAI_DEPLOYMENT=gpt-5.2
 VITE_AZURE_OPENAI_API_VERSION=2024-10-21
 
-# (Optional) gpt-image-1.5 for AI image generation
+# --- Or OpenAI direct ---
+# VITE_OPENAI_API_KEY=sk-...
+# VITE_OPENAI_MODEL=gpt-4o
+
+# --- Or Anthropic ---
+# VITE_ANTHROPIC_API_KEY=sk-ant-...
+# VITE_ANTHROPIC_MODEL=claude-sonnet-4-20250514
+
+# --- Or Google Gemini ---
+# VITE_GOOGLE_API_KEY=AIza...
+# VITE_GOOGLE_MODEL=gemini-2.0-flash
+
+# Image provider: azure-openai | openai | none
+# VITE_IMAGE_PROVIDER=azure-openai
 VITE_AZURE_IMAGE_ENDPOINT=https://your-image-resource.openai.azure.com
 VITE_AZURE_IMAGE_API_KEY=your-image-key
 VITE_AZURE_IMAGE_DEPLOYMENT=gpt-image-1.5
@@ -276,11 +294,12 @@ VITE_AZURE_IMAGE_API_VERSION=2024-10-21
 ```
 
 ## API Notes
-- GPT-5.2 uses `max_completion_tokens` (not `max_tokens`)
+- OpenAI / Azure OpenAI use `max_completion_tokens`; Anthropic uses `max_tokens`; Google uses `maxOutputTokens`
 - Default timeout: 2 min (5 min for image-heavy recipes)
 - Default max tokens: 16K (48K for image-heavy recipes)
-- gpt-image-1.5 supports sizes: 1024x1024, 1024x1536, 1536x1024
+- Image generation supports sizes: 1024x1024, 1024x1536, 1536x1024
 - AbortController support for request cancellation
+- JSON output: OpenAI/Azure use `response_format`; Google uses `responseMimeType`; Anthropic relies on prompt instructions
 
 ## Security Notes
 - API keys embedded at build time (extension-only use)

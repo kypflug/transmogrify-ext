@@ -1,9 +1,9 @@
 /**
  * Image Generation Service
- * Handles AI image generation via Azure OpenAI gpt-image-1
+ * Supports Azure OpenAI (gpt-image-1) and OpenAI direct (gpt-image-1 / DALL-E 3)
  */
 
-import { imageConfig, isImageConfigured } from './config';
+import { imageConfig, isImageConfigured, AzureImageConfig, OpenAIImageConfig } from './config';
 
 export interface ImageGenerationRequest {
   prompt: string;
@@ -27,7 +27,7 @@ export interface ImageGenerationResponse {
 }
 
 /**
- * Generate images using Azure OpenAI gpt-image-1
+ * Generate images using the configured provider
  */
 export async function generateImages(
   requests: ImageGenerationRequest[]
@@ -36,7 +36,7 @@ export async function generateImages(
     return {
       success: false,
       images: [],
-      error: 'Image generation is not configured. Add VITE_AZURE_IMAGE_* to .env',
+      error: 'Image generation is not configured. Set VITE_IMAGE_PROVIDER and the matching API key in .env',
     };
   }
 
@@ -63,20 +63,37 @@ export async function generateImages(
 }
 
 /**
- * Generate a single image
+ * Generate a single image via the active provider
  */
 async function generateSingleImage(
   request: ImageGenerationRequest,
   id: string
 ): Promise<GeneratedImage> {
-  const url = `${imageConfig.endpoint}/openai/deployments/${imageConfig.deployment}/images/generations?api-version=${imageConfig.apiVersion}`;
+  switch (imageConfig.provider) {
+    case 'azure-openai':
+      return generateAzureImage(imageConfig, request, id);
+    case 'openai':
+      return generateOpenAIImage(imageConfig, request, id);
+    case 'none':
+      return { id, error: 'Image generation is disabled' };
+  }
+}
+
+// ─── Azure OpenAI image generation ───────────────────────────────────────────
+
+async function generateAzureImage(
+  config: AzureImageConfig,
+  request: ImageGenerationRequest,
+  id: string
+): Promise<GeneratedImage> {
+  const url = `${config.endpoint}/openai/deployments/${config.deployment}/images/generations?api-version=${config.apiVersion}`;
 
   try {
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'api-key': imageConfig.apiKey,
+        'api-key': config.apiKey,
       },
       body: JSON.stringify({
         prompt: request.prompt,
@@ -87,22 +104,13 @@ async function generateSingleImage(
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[Transmogrifier] Image generation error:', errorText);
-      return {
-        id,
-        error: `API error: ${response.status} ${response.statusText}`,
-      };
+      console.error('[Transmogrifier] Azure image generation error:', errorText);
+      return { id, error: `API error: ${response.status} ${response.statusText}` };
     }
 
     const result = await response.json();
     const imageData = result.data?.[0];
-
-    if (!imageData) {
-      return {
-        id,
-        error: 'No image data returned',
-      };
-    }
+    if (!imageData) return { id, error: 'No image data returned' };
 
     return {
       id,
@@ -111,11 +119,55 @@ async function generateSingleImage(
       revisedPrompt: imageData.revised_prompt,
     };
   } catch (error) {
-    console.error('[Transmogrifier] Image generation failed:', error);
+    console.error('[Transmogrifier] Azure image generation failed:', error);
+    return { id, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+// ─── OpenAI direct image generation ──────────────────────────────────────────
+
+async function generateOpenAIImage(
+  config: OpenAIImageConfig,
+  request: ImageGenerationRequest,
+  id: string
+): Promise<GeneratedImage> {
+  const url = 'https://api.openai.com/v1/images/generations';
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.model,
+        prompt: request.prompt,
+        n: 1,
+        size: request.size || '1024x1024',
+        response_format: 'b64_json',
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Transmogrifier] OpenAI image generation error:', errorText);
+      return { id, error: `API error: ${response.status} ${response.statusText}` };
+    }
+
+    const result = await response.json();
+    const imageData = result.data?.[0];
+    if (!imageData) return { id, error: 'No image data returned' };
+
     return {
       id,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      base64: imageData.b64_json,
+      url: imageData.url,
+      revisedPrompt: imageData.revised_prompt,
     };
+  } catch (error) {
+    console.error('[Transmogrifier] OpenAI image generation failed:', error);
+    return { id, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 

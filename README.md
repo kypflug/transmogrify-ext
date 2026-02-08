@@ -1,11 +1,14 @@
 ﻿# Transmogrifier
 
-An AI-powered Microsoft Edge extension that "transmogrifies" web pages into beautiful, focused reading experiences. Uses GPT-5.2 to generate complete HTML documents with optional AI-generated images via gpt-image-1.5.
+An AI-powered Microsoft Edge extension that "transmogrifies" web pages into beautiful, focused reading experiences. Uses a large language model to generate complete HTML documents with optional AI-generated images.
+
+Supports **multiple AI providers** out of the box — Azure OpenAI, OpenAI, Anthropic (Claude), and Google (Gemini). Bring your own API key.
 
 ## Features
 
-- **AI-Powered Transformation**: GPT-5.2 generates complete, standalone HTML documents
-- **AI Image Generation**: Optional gpt-image-1.5 integration for diagrams and illustrations
+- **AI-Powered Transformation**: Generates complete, standalone HTML documents via your preferred LLM
+- **Multi-Provider Support**: Azure OpenAI, OpenAI, Anthropic (Claude), or Google (Gemini)
+- **AI Image Generation**: Optional image generation via Azure OpenAI or OpenAI
 - **Built-in Recipes**: Focus, Reader, Aesthetic, Illustrated, Visualize, Declutter, Interview, and Custom modes
 - **Pin Favorites**: Pin preferred recipes to the top of the list
 - **Library**: Full two-pane article browser with search, filtering, sorting, and inline reading
@@ -29,25 +32,72 @@ The **Library of Transmogrifia** ([kypflug/transmogrifia-pwa](https://github.com
 
 ### Prerequisites
 - Node.js 18+
-- Azure OpenAI API access with GPT-5.2 deployment
-- (Optional) Azure OpenAI API access with gpt-image-1.5 deployment
+- An API key from **one** of the supported providers:
+  - [Azure OpenAI](https://learn.microsoft.com/azure/ai-services/openai/)
+  - [OpenAI](https://platform.openai.com/api-keys)
+  - [Anthropic (Claude)](https://console.anthropic.com/)
+  - [Google (Gemini)](https://aistudio.google.com/apikey)
+- (Optional) An image-capable API key (Azure OpenAI or OpenAI) for AI image generation
 - (Optional) Azure app registration for OneDrive sync
 
 ### Configuration
+
 1. Copy `.env.example` to `.env`
-2. Add your Azure OpenAI credentials:
-```
+2. Set `VITE_AI_PROVIDER` to your provider and fill in the matching credentials.
+
+Only the variables for your chosen provider need to be set — the rest can stay commented out.
+
+#### Azure OpenAI
+```env
+VITE_AI_PROVIDER=azure-openai
 VITE_AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
 VITE_AZURE_OPENAI_API_KEY=your-key
 VITE_AZURE_OPENAI_DEPLOYMENT=gpt-5.2
+VITE_AZURE_OPENAI_API_VERSION=2024-10-21
 ```
 
-3. (Optional) Add image generation credentials:
+#### OpenAI
+```env
+VITE_AI_PROVIDER=openai
+VITE_OPENAI_API_KEY=sk-...
+VITE_OPENAI_MODEL=gpt-4o          # or gpt-4.1, o3, etc.
 ```
-VITE_AZURE_IMAGE_ENDPOINT=https://your-image-resource.openai.azure.com
+
+#### Anthropic (Claude)
+```env
+VITE_AI_PROVIDER=anthropic
+VITE_ANTHROPIC_API_KEY=sk-ant-...
+VITE_ANTHROPIC_MODEL=claude-sonnet-4-20250514
+```
+
+#### Google (Gemini)
+```env
+VITE_AI_PROVIDER=google
+VITE_GOOGLE_API_KEY=AIza...
+VITE_GOOGLE_MODEL=gemini-2.0-flash
+```
+
+#### Image Generation (optional)
+Image generation is available with Azure OpenAI or OpenAI. Set `VITE_IMAGE_PROVIDER` and the matching key:
+
+```env
+# Azure OpenAI image generation
+VITE_IMAGE_PROVIDER=azure-openai
+VITE_AZURE_IMAGE_ENDPOINT=https://your-resource.openai.azure.com
 VITE_AZURE_IMAGE_API_KEY=your-image-key
 VITE_AZURE_IMAGE_DEPLOYMENT=gpt-image-1.5
 ```
+
+```env
+# OpenAI direct image generation
+VITE_IMAGE_PROVIDER=openai
+VITE_OPENAI_IMAGE_MODEL=gpt-image-1   # or dall-e-3
+# Uses VITE_OPENAI_API_KEY by default, or set VITE_OPENAI_IMAGE_API_KEY
+```
+
+Set `VITE_IMAGE_PROVIDER=none` (or omit it) to disable image generation entirely.
+
+> **Note:** Anthropic and Google do not currently offer compatible image generation APIs, so image generation is only available with OpenAI-family providers.
 
 ### Build
 ```bash
@@ -123,8 +173,9 @@ src/
 +-- viewer/               # Article viewer page
 +-- background/           # Service worker (orchestration)
 +-- shared/               # Types, recipes, services
-    +-- ai-service.ts         # GPT-5.2 API
-    +-- image-service.ts      # gpt-image-1.5 API
+    +-- ai-service.ts         # Multi-provider AI API (Azure OpenAI / OpenAI / Anthropic / Google)
+    +-- image-service.ts      # Image generation API (Azure OpenAI / OpenAI)
+    +-- config.ts             # Provider selection & env-var loading
     +-- storage-service.ts    # IndexedDB storage
     +-- auth-service.ts       # Microsoft OAuth2 PKCE
     +-- onedrive-service.ts   # OneDrive Graph API client

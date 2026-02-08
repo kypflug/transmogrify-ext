@@ -3,13 +3,13 @@
 > Full documentation: [claude.md](../claude.md)
 
 ## What This Is
-Edge extension (Manifest V3) that uses GPT-5.2 to transform web pages into beautiful standalone HTML documents. Optional AI images via gpt-image-1.5. Articles stored in IndexedDB, synced via OneDrive.
+Edge extension (Manifest V3) that uses an LLM (Azure OpenAI, OpenAI, Anthropic Claude, or Google Gemini) to transform web pages into beautiful standalone HTML documents. Optional AI images via OpenAI-family providers. Articles stored in IndexedDB, synced via OneDrive.
 
 ## Companion PWA
 **Library of Transmogrifia** ([kypflug/transmogrifia-pwa](https://github.com/kypflug/transmogrifia-pwa)) — Read-only PWA for browsing transmogrified articles on any device. Shares the same Azure AD app, OneDrive `articles/` folder, and `OneDriveArticleMeta` schema. Changes to sync logic, storage format, or the OneDrive file layout **must** stay compatible with the PWA's `src/services/graph.ts` and `src/types.ts`.
 
 ## Tech Stack
-TypeScript (strict) | Vite | Vanilla TS | Azure OpenAI | IndexedDB | Microsoft Graph API | OAuth2 PKCE
+TypeScript (strict) | Vite | Vanilla TS | Multi-provider AI (Azure OpenAI / OpenAI / Anthropic / Google) | IndexedDB | Microsoft Graph API | OAuth2 PKCE
 
 ## Structure
 ```
