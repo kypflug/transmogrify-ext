@@ -17,6 +17,29 @@ Transmogrifier is a Microsoft Edge extension (Manifest V3) that transforms web p
 
 ## Architecture Overview
 
+### Companion PWA
+
+**Library of Transmogrifia** ([kypflug/transmogrifia-pwa](https://github.com/kypflug/transmogrifia-pwa)) is a read-only PWA that shares the same OneDrive storage layer. Both apps use the same Azure AD app registration (client ID `4b54bcee-1c83-4f52-9faf-d0dfd89c5ac2`), the same `Files.ReadWrite.AppFolder` scope, and the same `articles/` folder layout:
+
+```
+/drive/special/approot/articles/
+  ├── {id}.json   ← OneDriveArticleMeta (shared schema)
+  └── {id}.html   ← Complete self-contained HTML
+```
+
+**Interoperability contract — any changes to these must be mirrored in the PWA:**
+
+| Shared surface | Extension file | PWA file |
+|----------------|----------------|----------|
+| `OneDriveArticleMeta` interface | `src/shared/onedrive-service.ts` | `src/types.ts` |
+| OneDrive folder path (`articles/`) | `src/shared/onedrive-service.ts` (`APP_FOLDER`) | `src/services/graph.ts` (`APP_FOLDER`) |
+| Graph API endpoints & auth | `src/shared/onedrive-service.ts` | `src/services/graph.ts` |
+| Article ID format | `src/shared/storage-service.ts` (`generateId`) | N/A (read-only, consumes IDs) |
+| Metadata JSON shape (`.json` files) | `uploadArticleMeta()` | `downloadMeta()` / `uploadMeta()` |
+| Delta API usage | `getDelta()` | `syncArticles()` |
+
+The PWA also uses delta sync, filters `.json` client-side (no `$filter`), and caches articles in its own IndexedDB (`TransmogrifiaPWA`). The extension uses `TransmogrifierDB`.
+
 ```
 +------------------+     +------------------+     +------------------+
 |   Popup UI       |---->|  Service Worker   |---->| Content Script   |
@@ -174,7 +197,7 @@ Articles stored in IndexedDB (`TransmogrifierDB`) via `storage-service.ts`:
 
 ```typescript
 interface SavedArticle {
-  id: string;              // Timestamp-based unique ID
+  id: string;              // Timestamp-based unique ID (preserved across sync)
   title: string;
   originalUrl: string;
   recipeId: string;
@@ -187,7 +210,7 @@ interface SavedArticle {
 }
 ```
 
-Storage supports: save, get, getAll, delete, toggleFavorite, export to file.
+Storage supports: save, get, getAll, upsert (for sync), delete, toggleFavorite, export to file.
 
 ## Library
 
@@ -221,8 +244,10 @@ Cross-device article sync via Microsoft Graph API:
   - Delta queries for efficient change detection
 - **`sync-service.ts`**: Bidirectional sync orchestrator
   - Push: On article save, respin, delete, or favorite toggle
-  - Pull: On extension install, every 15 minutes via `chrome.alarms`, or manual trigger
+  - Pull: On extension install, every 5 minutes via `chrome.alarms`, or manual trigger
   - Conflict resolution: Latest `updatedAt` wins
+  - Cloud index rebuilt exclusively from pull/delta (not updated on push)
+  - `upsertArticle()` preserves original IDs and timestamps from remote articles
 
 ### Sync Flow
 1. User clicks sign-in text in Library sync bar
@@ -230,7 +255,8 @@ Cross-device article sync via Microsoft Graph API:
 3. Service worker initiates PKCE auth flow via `chrome.identity`
 4. On success, initial pull syncs all remote articles
 5. Subsequent saves/deletes automatically push to OneDrive
-6. Alarm fires every 15 minutes for periodic pull
+6. Alarm fires every 5 minutes for periodic pull
+7. PWA users see changes on their next sync (delta-based)
 
 ## Environment Configuration
 

@@ -26,6 +26,7 @@ import {
   pushMetaUpdateToCloud,
   pullFromCloud,
   downloadCloudArticle,
+  toggleCloudFavorite,
   getSyncState,
   setupSyncAlarm,
 } from '../shared/sync-service';
@@ -393,9 +394,15 @@ async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
     case 'TOGGLE_FAVORITE': {
       try {
         const favId = message.payload?.articleId || '';
-        const isFavorite = await toggleFavorite(favId);
-        // Push meta update to cloud in background
-        getArticle(favId).then(a => { if (a) pushMetaUpdateToCloud(a).catch(() => {}); });
+        let isFavorite: boolean;
+        try {
+          isFavorite = await toggleFavorite(favId);
+          // Push meta update to cloud in background
+          getArticle(favId).then(a => { if (a) pushMetaUpdateToCloud(a).catch(() => {}); });
+        } catch {
+          // Article not found locally — try cloud-only toggle
+          isFavorite = await toggleCloudFavorite(favId);
+        }
         return { success: true, isFavorite };
       } catch (error) {
         return { success: false, error: String(error) };

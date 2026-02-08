@@ -21,6 +21,10 @@ An AI-powered Microsoft Edge extension that "transmogrifies" web pages into beau
 - **New Tab View**: Open any article as a clean standalone page
 - **Export**: Save articles as standalone HTML files
 
+## Companion PWA
+
+The **Library of Transmogrifia** ([kypflug/transmogrifia-pwa](https://github.com/kypflug/transmogrifia-pwa)) is a standalone Progressive Web App for reading transmogrified articles on any device — phone, tablet, or desktop — without the extension. It shares the same Azure AD app registration, OneDrive `articles/` AppFolder, and `OneDriveArticleMeta` schema, so articles created by the extension appear automatically in the PWA and vice versa for metadata changes (favorites).
+
 ## Setup
 
 ### Prerequisites
@@ -84,7 +88,7 @@ You can start multiple jobs on different tabs simultaneously. Active jobs appear
 Open a saved article and click "Respin" to re-transform it with a different recipe without re-extracting from the original page.
 
 ### OneDrive Sync
-Sign in via the Library's sync bar to enable cross-device article sync through OneDrive. Articles are pushed to the cloud on save/delete/favorite and pulled periodically (every 15 minutes) or on demand.
+Sign in via the Library's sync bar to enable cross-device article sync through OneDrive. Articles are pushed to the cloud on save/delete/favorite and pulled periodically (every 5 minutes) or on demand.
 
 ## Recipes
 

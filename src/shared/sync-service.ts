@@ -18,10 +18,10 @@ import {
   type OneDriveArticleMeta,
 } from './onedrive-service';
 import {
-  saveArticle,
   getArticle,
   getAllArticles,
   deleteArticle as localDelete,
+  upsertArticle,
   type SavedArticle,
   type ArticleSummary,
 } from './storage-service';
@@ -85,16 +85,7 @@ export async function pushArticleToCloud(article: SavedArticle): Promise<void> {
 
     await uploadArticle(article.id, article.html, meta);
 
-    // Update cloud index
-    const index = await getCloudIndex();
-    const existing = index.findIndex(a => a.id === article.id);
-    if (existing >= 0) {
-      index[existing] = meta;
-    } else {
-      index.push(meta);
-    }
-    await setCloudIndex(index);
-
+    // Don't update cloud index on push — let the next pull/delta discover it
     console.log('[Sync] Pushed article to cloud:', article.id);
   } catch (err) {
     console.error('[Sync] Failed to push article to cloud:', err);
@@ -144,16 +135,7 @@ export async function pushMetaUpdateToCloud(article: SavedArticle): Promise<void
     const { uploadArticleMeta } = await import('./onedrive-service');
     await uploadArticleMeta(article.id, meta);
 
-    // Update cloud index
-    const index = await getCloudIndex();
-    const existing = index.findIndex(a => a.id === article.id);
-    if (existing >= 0) {
-      index[existing] = meta;
-    } else {
-      index.push(meta);
-    }
-    await setCloudIndex(index);
-
+    // Don't update cloud index on push — let the next pull/delta discover it
     console.log('[Sync] Pushed meta update to cloud:', article.id);
   } catch (err) {
     console.error('[Sync] Failed to push meta update to cloud:', err);
@@ -206,8 +188,8 @@ export async function pullFromCloud(): Promise<{ pulled: number; deleted: number
         }
         // If local is newer, we'll push on next save (or we could push now)
       } else {
-        // New remote article — add to index but don't download content yet
-        pulled++;
+        // New remote article — add to cloud index only (lazy download on open)
+        // Don't count as "pulled" since content isn't downloaded yet
       }
     }
 
@@ -259,27 +241,31 @@ export async function downloadCloudArticle(articleId: string): Promise<SavedArti
 }
 
 /**
- * Save or update an article from remote metadata + HTML
+ * Save or update an article from remote metadata + HTML.
+ * Preserves the original ID, timestamps, and favorite state from the remote.
  */
 async function saveOrUpdateArticle(
   meta: OneDriveArticleMeta,
   html: string
 ): Promise<SavedArticle> {
-  // Check if it already exists
   const existing = await getArticle(meta.id);
-  if (existing) {
-    // Update in place — we need to use the raw DB operation
-    // For now, delete and re-save
-    await localDelete(meta.id);
-  }
 
-  return saveArticle({
+  const article: SavedArticle = {
+    id: meta.id,
     title: meta.title,
     originalUrl: meta.originalUrl,
     recipeId: meta.recipeId,
     recipeName: meta.recipeName,
     html,
-  });
+    originalContent: existing?.originalContent,
+    thumbnail: existing?.thumbnail,
+    createdAt: meta.createdAt,
+    updatedAt: meta.updatedAt,
+    isFavorite: meta.isFavorite,
+    size: meta.size,
+  };
+
+  return upsertArticle(article);
 }
 
 /**
@@ -315,6 +301,28 @@ export async function getMergedArticleList(): Promise<(ArticleSummary & { cloudO
   return merged;
 }
 
+/**
+ * Toggle favorite for a cloud-only article.
+ * Downloads it first, toggles the favorite, then pushes the update.
+ */
+export async function toggleCloudFavorite(articleId: string): Promise<boolean> {
+  // Download the article locally first
+  const article = await downloadCloudArticle(articleId);
+  if (!article) throw new Error('Article not found in cloud index');
+
+  // Now toggle locally (article exists in IndexedDB after download)
+  const { toggleFavorite } = await import('./storage-service');
+  const newState = await toggleFavorite(articleId);
+
+  // Push updated meta to cloud
+  const updated = await getArticle(articleId);
+  if (updated) {
+    pushMetaUpdateToCloud(updated).catch(() => {});
+  }
+
+  return newState;
+}
+
 // ─── Alarm-based Periodic Sync ───────────────────────
 
 const SYNC_ALARM_NAME = 'transmogrifier-sync';
@@ -324,7 +332,7 @@ const SYNC_ALARM_NAME = 'transmogrifier-sync';
  */
 export function setupSyncAlarm(): void {
   chrome.alarms.create(SYNC_ALARM_NAME, {
-    periodInMinutes: 15,
+    periodInMinutes: 5,
   });
 
   chrome.alarms.onAlarm.addListener((alarm) => {

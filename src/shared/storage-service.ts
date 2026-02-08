@@ -340,6 +340,22 @@ export async function toggleFavorite(id: string): Promise<boolean> {
 }
 
 /**
+ * Upsert (insert or update) an article by its ID.
+ * Uses store.put() so the article's original ID, timestamps, and metadata are preserved.
+ * Used by sync to save remote articles without generating new IDs.
+ */
+export async function upsertArticle(article: SavedArticle): Promise<SavedArticle> {
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([STORE_NAME], 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    store.put(article);
+    tx.oncomplete = () => resolve(article);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/**
  * Get storage statistics
  */
 export async function getStorageStats(): Promise<{ count: number; totalSize: number }> {

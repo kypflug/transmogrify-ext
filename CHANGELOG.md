@@ -2,6 +2,19 @@
 
 All notable changes to Transmogrifier will be documented in this file.
 
+## [0.4.4] - 2026-02-08
+
+### Fixed
+- **Critical: Article ID preservation on sync** — `saveOrUpdateArticle` no longer generates a new ID when pulling remote articles; added `upsertArticle()` to `storage-service.ts` using `store.put()` to preserve original IDs, timestamps, and favorite state. This was the root cause of duplicate articles appearing across devices.
+- **Cloud index drift** — Push operations (`pushArticleToCloud`, `pushMetaUpdateToCloud`) no longer manually update the cloud index; it is now rebuilt exclusively from pull/delta results, preventing index-vs-reality divergence.
+- **`$filter=endswith()` on consumer OneDrive** — Removed unsupported OData `$filter` from `listRemoteArticles`; now uses client-side `.endsWith('.json')` filtering with `$top=200` pagination.
+- **Inflated pull counter** — Cloud-index-only additions (no HTML downloaded) no longer increment the `pulled` count or trigger spurious `ARTICLES_CHANGED` broadcasts.
+- **Favorite toggle on cloud-only articles** — `TOGGLE_FAVORITE` handler now falls back to `toggleCloudFavorite()`, which downloads the article first, then toggles and pushes the update.
+
+### Changed
+- **Sync alarm interval** reduced from 15 minutes to 5 minutes for faster cross-device convergence.
+- **Delta API optimization** — `getDelta()` now uses `@microsoft.graph.downloadUrl` from delta responses when available, avoiding an extra Graph API call per metadata file.
+
 ## [0.4.3] - 2026-02-07
 
 ### Added

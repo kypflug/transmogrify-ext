@@ -36,6 +36,13 @@ export interface DeltaResult {
   deltaToken: string;
 }
 
+interface DeltaItem {
+  name?: string;
+  deleted?: { state: string };
+  '@microsoft.graph.downloadUrl'?: string;
+  [key: string]: unknown;
+}
+
 /**
  * Get an authenticated headers object, or throw if not signed in
  */
@@ -226,7 +233,8 @@ export async function listRemoteArticles(): Promise<OneDriveArticleMeta[]> {
   const headers = await authHeaders();
   const metas: OneDriveArticleMeta[] = [];
 
-  let url: string | null = `${GRAPH_BASE}/me/drive/special/approot:/${APP_FOLDER}:/children?$filter=endswith(name,'.json')&$select=name`;
+  // Don't use $filter — consumer OneDrive doesn't support it on /children
+  let url: string | null = `${GRAPH_BASE}/me/drive/special/approot:/${APP_FOLDER}:/children?$select=name&$top=200`;
 
   while (url) {
     const res = await fetch(url, { headers });
@@ -291,7 +299,7 @@ export async function getDelta(): Promise<DeltaResult> {
 
     const data = await res.json();
 
-    for (const item of data.value || []) {
+    for (const item of (data.value || []) as DeltaItem[]) {
       const name: string = item.name || '';
 
       // Only care about .json metadata files
@@ -302,9 +310,17 @@ export async function getDelta(): Promise<DeltaResult> {
       if (item.deleted) {
         deleted.push(id);
       } else {
-        // Download the metadata content
+        // Use @microsoft.graph.downloadUrl if available (avoids extra API call)
+        const directUrl = item['@microsoft.graph.downloadUrl'];
         try {
-          const meta = await downloadArticleMeta(id);
+          let meta: OneDriveArticleMeta;
+          if (directUrl) {
+            const res = await fetch(directUrl);
+            if (!res.ok) throw new Error(`Direct download failed: ${res.status}`);
+            meta = await res.json();
+          } else {
+            meta = await downloadArticleMeta(id);
+          }
           upserted.push(meta);
         } catch {
           console.warn('[OneDrive] Skipping delta item:', name);
