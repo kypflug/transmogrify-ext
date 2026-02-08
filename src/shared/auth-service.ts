@@ -66,6 +66,7 @@ export async function signIn(): Promise<AuthTokens> {
   authUrl.searchParams.set('state', state);
   authUrl.searchParams.set('code_challenge', challenge);
   authUrl.searchParams.set('code_challenge_method', 'S256');
+  authUrl.searchParams.set('response_mode', 'query');
   authUrl.searchParams.set('prompt', 'select_account');
 
   console.log('[Auth] Launching auth flow, redirect:', redirectUri);
@@ -81,10 +82,14 @@ export async function signIn(): Promise<AuthTokens> {
   }
 
   // Extract authorization code from redirect URL
+  // Azure AD returns params in query string (response_mode=query) or fragment (SPA default)
   const url = new URL(responseUrl);
-  const code = url.searchParams.get('code');
-  const returnedState = url.searchParams.get('state');
-  const error = url.searchParams.get('error');
+  const params = url.searchParams.has('code') || url.searchParams.has('error')
+    ? url.searchParams
+    : new URLSearchParams(url.hash.replace('#', ''));
+  const code = params.get('code');
+  const returnedState = params.get('state');
+  const error = params.get('error');
 
   if (error) {
     const errorDesc = url.searchParams.get('error_description') || error;
