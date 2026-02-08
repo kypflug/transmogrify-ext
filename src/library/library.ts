@@ -13,12 +13,13 @@ import {
   type ArticleSummary,
   type SavedArticle,
 } from '../shared/storage-service';
+import { getMergedArticleList } from '../shared/sync-service';
 import { BUILT_IN_RECIPES } from '../shared/recipes';
 import type { RemixRequest } from '../shared/types';
 
 // ─── State ───────────────────────────────────────────
-let articles: ArticleSummary[] = [];
-let filteredArticles: ArticleSummary[] = [];
+let articles: (ArticleSummary & { cloudOnly?: boolean })[] = [];
+let filteredArticles: (ArticleSummary & { cloudOnly?: boolean })[] = [];
 let selectedArticleId: string | null = null;
 let currentArticle: SavedArticle | null = null;
 let focusedIndex = -1;
@@ -77,6 +78,7 @@ const confirmDeleteBtn = document.getElementById('confirmDeleteBtn') as HTMLButt
 const syncBarIcon = document.getElementById('syncBarIcon') as HTMLElement;
 const syncBarText = document.getElementById('syncBarText') as HTMLElement;
 const syncBarBtn = document.getElementById('syncBarBtn') as HTMLButtonElement;
+const syncBarSignOut = document.getElementById('syncBarSignOut') as HTMLButtonElement;
 
 // Progress reading pane
 const readingProgress = document.getElementById('readingProgress') as HTMLElement;
@@ -108,12 +110,17 @@ async function init() {
 
 async function loadArticles() {
   try {
-    articles = await getAllArticles();
+    // Use merged list (local + cloud-only) so synced articles appear even if not downloaded
+    articles = await getMergedArticleList();
     applyFilterAndSort();
     renderList();
     await updateFooter();
   } catch (err) {
-    console.error('[Library] Failed to load articles:', err);
+    console.error('[Library] Failed to load articles, falling back to local:', err);
+    articles = await getAllArticles();
+    applyFilterAndSort();
+    renderList();
+    await updateFooter();
   }
 }
 
@@ -351,11 +358,14 @@ function renderList() {
     const recipeIcon = recipe?.icon ?? '📄';
     const recipeName = article.recipeName || recipe?.name || article.recipeId;
     const dateStr = formatRelativeDate(article.createdAt);
+    const cloudBadge = (article as any).cloudOnly
+      ? '<span class="article-item-cloud" title="Stored in cloud">☁</span>'
+      : '';
 
     return `
       <div class="article-item${isActive ? ' active' : ''}${isFocused ? ' focused' : ''}"
            data-id="${article.id}" data-index="${index}">
-        <div class="article-item-title">${favStar}${escapeHtml(article.title)}</div>
+        <div class="article-item-title">${favStar}${cloudBadge}${escapeHtml(article.title)}</div>
         <div class="article-item-meta">
           <span class="article-item-recipe">${recipeIcon} ${escapeHtml(recipeName)}</span>
           <span class="article-item-dot">·</span>
@@ -390,33 +400,58 @@ async function selectArticle(id: string) {
     el.classList.toggle('active', (el as HTMLElement).dataset.id === id);
   });
 
-  // Load full article
+  // Load full article (download from cloud if needed)
   try {
     currentArticle = await getArticle(id);
     if (!currentArticle) {
-      console.warn('[Library] Article not found:', id);
-      return;
+      // Article may be cloud-only — try downloading
+      const listEntry = articles.find(a => a.id === id);
+      if (listEntry && (listEntry as any).cloudOnly) {
+        readingEmpty.classList.add('hidden');
+        readingArticle.classList.remove('hidden');
+        readingTitle.textContent = listEntry.title;
+        readingInfo.textContent = 'Downloading from cloud…';
+        contentFrame.srcdoc = '';
+        const response = await chrome.runtime.sendMessage({
+          type: 'SYNC_DOWNLOAD_ARTICLE',
+          payload: { articleId: id },
+        });
+        if (response?.success && response.article) {
+          currentArticle = response.article;
+          // Refresh list to remove cloud-only flag
+          await loadArticles();
+        } else {
+          readingInfo.textContent = 'Failed to download article';
+          return;
+        }
+      } else {
+        console.warn('[Library] Article not found:', id);
+        return;
+      }
     }
+
+    // At this point currentArticle is guaranteed set
+    const article = currentArticle!;
 
     // Update reading pane
     readingEmpty.classList.add('hidden');
     readingArticle.classList.remove('hidden');
 
-    readingTitle.textContent = currentArticle.title;
+    readingTitle.textContent = article.title;
 
-    const domain = getDomain(currentArticle.originalUrl);
-    const recipe = BUILT_IN_RECIPES.find(r => r.id === currentArticle!.recipeId);
-    const recipeLabel = recipe ? `${recipe.icon} ${recipe.name}` : currentArticle.recipeName;
-    const dateStr = formatRelativeDate(currentArticle.createdAt);
+    const domain = getDomain(article.originalUrl);
+    const recipe = BUILT_IN_RECIPES.find(r => r.id === article.recipeId);
+    const recipeLabel = recipe ? `${recipe.icon} ${recipe.name}` : article.recipeName;
+    const dateStr = formatRelativeDate(article.createdAt);
     readingInfo.textContent = `${domain}  ·  ${recipeLabel}  ·  ${dateStr}`;
 
     // Update favorite button
-    favoriteIcon.textContent = currentArticle.isFavorite ? '★' : '☆';
-    btnFavorite.classList.toggle('active', currentArticle.isFavorite);
+    favoriteIcon.textContent = article.isFavorite ? '★' : '☆';
+    btnFavorite.classList.toggle('active', article.isFavorite);
 
     // Render content in iframe (hide the save FAB — redundant with header save button)
     const fabHideStyle = '<style>.remix-save-fab { display: none !important; }</style>';
-    contentFrame.srcdoc = currentArticle.html.replace('</head>', fabHideStyle + '</head>');
+    contentFrame.srcdoc = article.html.replace('</head>', fabHideStyle + '</head>');
     contentFrame.addEventListener('load', () => {
       fixAnchorLinks();
       forwardIframeKeyboard();
@@ -745,6 +780,7 @@ function setupEventListeners() {
   // Sync bar
   syncBarBtn.addEventListener('click', handleSyncNow);
   syncBarText.addEventListener('click', handleSyncSignIn);
+  syncBarSignOut.addEventListener('click', handleSignOut);
 
   // Listen for article changes and progress updates from service worker
   chrome.runtime.onMessage.addListener((message) => {
@@ -1013,12 +1049,14 @@ async function loadSyncStatus() {
       syncBarText.textContent = 'Sign in to sync';
       syncBarText.classList.add('clickable');
       syncBarBtn.classList.add('hidden');
+      syncBarSignOut.classList.add('hidden');
       return;
     }
 
     syncBarText.classList.remove('clickable');
 
     syncBarBtn.classList.remove('hidden');
+    syncBarSignOut.classList.remove('hidden');
 
     if (isSyncing) {
       syncBarIcon.textContent = '🔄';
@@ -1069,6 +1107,16 @@ async function handleSyncSignIn() {
   } catch {
     syncBarText.textContent = 'Sign in failed';
     syncBarText.classList.add('clickable');
+  }
+}
+
+async function handleSignOut() {
+  try {
+    await chrome.runtime.sendMessage({ type: 'SYNC_SIGN_OUT' });
+    await loadSyncStatus();
+    await loadArticles();
+  } catch {
+    // ignore
   }
 }
 

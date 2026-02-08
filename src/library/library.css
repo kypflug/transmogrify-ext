@@ -233,6 +233,12 @@ body {
   margin-right: 4px;
 }
 
+.article-item-cloud {
+  color: #7EB8DA;
+  margin-right: 4px;
+  font-size: 13px;
+}
+
 .article-item-meta {
   display: flex;
   align-items: center;
