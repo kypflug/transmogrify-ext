@@ -404,7 +404,17 @@ LAYOUT:
 - Use asymmetric CSS Grid layouts, overlapping elements (negative margins or grid overlay)
 - Full-bleed sections alternating with contained text
 - Content should feel DESIGNED, not just "displayed"
-- Still must be readable and responsive
+
+RESPONSIVE DESIGN (CRITICAL):
+- All text must be able to wrap — never use white-space:nowrap on content text
+- Use fluid typography with clamp() for headings: e.g. clamp(1.8rem, 5vw, 5rem)
+- Grid layouts must collapse gracefully: use auto-fit/auto-fill with minmax(), or switch to single-column below 768px
+- Overlapping elements must reflow on small screens — no content hidden behind other content
+- All containers must use overflow-wrap:break-word and max-width:100vw to prevent horizontal scroll
+- Images: max-width:100%; height:auto — never let images overflow their container
+- Test mentally at 360px, 768px, and 1200px — the design should work at all three
+- On mobile (max-width: 600px): collapse multi-column grids to single column, reduce dramatic whitespace, scale down oversized type
+- box-sizing: border-box on all elements
 
 DON'T be predictable. CREATE something a human designer would be proud of.
 
@@ -524,6 +534,22 @@ LAYOUT:
 - Key findings or takeaways in highlighted callout boxes
 - Flow diagrams described as numbered steps with connecting lines (CSS borders)
 - Summary/overview panel at top with key metrics
+
+RESPONSIVE DESIGN (CRITICAL):
+- All text must wrap naturally — never use white-space:nowrap on content text, long words must break with overflow-wrap:break-word
+- Grid layouts: use auto-fit/auto-fill with minmax(min(100%, 280px), 1fr) so columns collapse on narrow screens
+- Sidenotes/margin notes: on screens below 900px, inline them as styled callout blocks within the main flow
+- Comparison tables: use overflow-x:auto on a wrapper so tables scroll horizontally rather than breaking the layout
+- All containers: max-width:100vw, box-sizing:border-box — no horizontal scrollbar ever
+- On mobile (max-width: 600px): single-column layout, full-width panels, reduce padding
+- Data panels and callout boxes must use min-width:0 inside grid/flex to allow shrinking
+
+IMAGE HANDLING (CRITICAL):
+- ALL images (generated or passed through from source) must use: max-width:100%; height:auto; display:block — never let an image overflow its container
+- If the source content contains an image wrapped in an <a> link to a full-size version, PRESERVE that link around the <img> tag
+- For passed-through images, keep the original src and alt text; wrap in a figure with a caption if context is available
+- Generated diagram images should also be constrained: set width:100% on the img and let the container control max size
+- Use object-fit:contain (not cover) for diagram/infographic images so nothing gets cropped
 
 IMAGE GUIDELINES:
 - Focus exclusively on DIAGRAMS and INFOGRAPHICS, not decorative images
@@ -646,19 +672,67 @@ COLOR PALETTE — clean messaging UI:
 
 BUBBLE STYLING:
 - Rounded corners: 18px on three corners, 4px on the corner closest to the avatar (like real messaging apps)
+- Incoming bubbles: border-radius: 4px 18px 18px 18px
+- Outgoing bubbles: border-radius: 18px 4px 18px 18px
 - Padding: 12px 16px
-- Max-width: 75% of the content column
 - Consecutive messages from the same speaker: cluster them (reduce gap to 3px, only show avatar on first message of cluster)
 - Slight box-shadow in light mode: 0 1px 2px rgba(0,0,0,0.06)
 
-LAYOUT:
-- Single centered column, max-width 640px (a comfortable chat-width)
-- Each message row: flex, with avatar on the speaker's side
-- Incoming (interviewee): flex-direction row, avatar left, bubble left-aligned
-- Outgoing (interviewer): flex-direction row-reverse, avatar right, bubble right-aligned
-- Vertical gap between different speakers: 16px
-- Vertical gap within a speaker's cluster: 3px
-- Context blocks: full-width within the column, margin 24px 0
+REQUIRED HTML STRUCTURE (follow this EXACTLY):
+Each message must use this markup pattern:
+
+For INCOMING (interviewee, left side):
+\`\`\`html
+<div class="msg-row incoming">
+  <div class="avatar" style="background:COLOR">X</div>
+  <div class="bubble-group">
+    <div class="speaker-name" style="color:COLOR">SPEAKER NAME</div>
+    <div class="bubble">Message text here...</div>
+    <!-- additional bubbles in same cluster have no speaker-name -->
+    <div class="bubble">Next message from same speaker...</div>
+  </div>
+</div>
+\`\`\`
+
+For OUTGOING (interviewer, right side) — NOTE: avatar comes FIRST in the HTML, row-reverse flips it visually:
+\`\`\`html
+<div class="msg-row outgoing">
+  <div class="avatar" style="background:COLOR">X</div>
+  <div class="bubble-group">
+    <div class="speaker-name" style="color:COLOR">SPEAKER NAME</div>
+    <div class="bubble">Message text here...</div>
+  </div>
+</div>
+\`\`\`
+
+REQUIRED CSS (include these rules EXACTLY — do not deviate):
+\`\`\`css
+.chat-container { max-width: 640px; margin: 0 auto; padding: 16px; }
+.msg-row { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 16px; }
+.msg-row.incoming { flex-direction: row; }
+.msg-row.outgoing { flex-direction: row-reverse; }
+.avatar { width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 16px; align-self: flex-start; }
+.bubble-group { display: flex; flex-direction: column; gap: 3px; max-width: 75%; min-width: 60px; }
+.speaker-name { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+.incoming .speaker-name { text-align: left; }
+.outgoing .speaker-name { text-align: right; }
+.bubble { padding: 12px 16px; font-size: 15px; line-height: 1.55; width: fit-content; overflow-wrap: break-word; word-break: break-word; }
+.incoming .bubble { border-radius: 4px 18px 18px 18px; align-self: flex-start; }
+.outgoing .bubble { border-radius: 18px 4px 18px 18px; align-self: flex-end; }
+@media (max-width: 480px) {
+  .bubble-group { max-width: 85%; }
+  .avatar { width: 32px; height: 32px; font-size: 14px; }
+  .chat-container { padding: 8px; }
+}
+\`\`\`
+
+CRITICAL LAYOUT RULES:
+- The speaker-name label goes INSIDE the .bubble-group, NOT as a separate centered element
+- msg-row.outgoing places the bubble-group BEFORE the avatar in DOM order; flex-direction:row-reverse makes the avatar appear on the right
+- NEVER center speaker names — they align to the side of their bubble
+- NEVER put bubbles in a wrapper with margin:auto — flex-direction handles all alignment
+- The .bubble element uses width:fit-content so short messages stay compact
+- Cluster consecutive messages from the same speaker in one .msg-row — only the first bubble gets the speaker-name
 
 BACKGROUND:
 - Light mode: very subtle repeating dot-grid pattern at low opacity over the #F0F0F0 base, like a chat app wallpaper

@@ -211,24 +211,42 @@ export async function pullFromCloud(): Promise<{ pulled: number; deleted: number
     await setCloudIndex(Array.from(indexMap.values()));
     await setSyncState({ lastSyncTime: Date.now(), isSyncing: false });
 
-    // ─── Reconciliation: push local-only articles to cloud ───
-    // After pull completes, find local articles missing from the cloud index
-    // and push them. This self-heals any failed initial pushes.
+    // ─── Reconciliation ───
+    // Compare local articles against the cloud index to handle:
+    // 1. Remote deletions that the delta missed (e.g. deleted items with no name)
+    // 2. Local-only articles that need pushing
     const finalCloudIndex = await getCloudIndex();
     const cloudIds = new Set(finalCloudIndex.map(a => a.id));
     let pushed = 0;
 
+    // Detect remote deletions: if a local article is NOT in the cloud index
+    // and was created more than 60 seconds ago (to avoid racing with a fresh save),
+    // it was deleted remotely — remove it locally.
+    const now = Date.now();
+    const FRESH_THRESHOLD_MS = 60_000;
     for (const local of localArticles) {
       if (!cloudIds.has(local.id)) {
-        try {
-          const fullArticle = await getArticle(local.id);
-          if (fullArticle) {
-            await pushArticleToCloud(fullArticle);
-            pushed++;
-            console.log('[Sync] Reconciled local-only article to cloud:', local.id);
+        const age = now - local.createdAt;
+        if (age > FRESH_THRESHOLD_MS) {
+          try {
+            await localDelete(local.id);
+            deleted++;
+            console.log('[Sync] Removed locally — deleted remotely:', local.id);
+          } catch (err) {
+            console.warn('[Sync] Failed to remove remotely-deleted article:', local.id, err);
           }
-        } catch (err) {
-          console.warn('[Sync] Failed to reconcile article:', local.id, err);
+        } else {
+          // Article is very new — assume it's a local create that hasn't been pushed yet
+          try {
+            const fullArticle = await getArticle(local.id);
+            if (fullArticle) {
+              await pushArticleToCloud(fullArticle);
+              pushed++;
+              console.log('[Sync] Reconciled local-only article to cloud:', local.id);
+            }
+          } catch (err) {
+            console.warn('[Sync] Failed to reconcile article:', local.id, err);
+          }
         }
       }
     }

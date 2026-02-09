@@ -11,6 +11,7 @@ import { isAIConfigured, isImageConfigured } from '../shared/config';
 // State
 let selectedRecipeId = 'focus';
 let pinnedRecipeIds: string[] = [];
+let pollingIntervalId: ReturnType<typeof setInterval> | null = null;
 
 // DOM Elements
 const openLibraryBtn = document.getElementById('openLibraryBtn')!;
@@ -139,8 +140,12 @@ function getStatusIcon(status: string): string {
  * Start polling for active remix updates
  */
 function startPolling() {
+  // Clear any existing interval to prevent duplicates
+  if (pollingIntervalId !== null) {
+    clearInterval(pollingIntervalId);
+  }
   // Poll every 2 seconds for updates
-  setInterval(async () => {
+  pollingIntervalId = setInterval(async () => {
     await loadActiveRemixes();
   }, 2000);
 }

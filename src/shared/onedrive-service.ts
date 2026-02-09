@@ -302,14 +302,20 @@ export async function getDelta(): Promise<DeltaResult> {
     for (const item of (data.value || []) as DeltaItem[]) {
       const name: string = item.name || '';
 
-      // Only care about .json metadata files
-      if (!name.endsWith('.json')) continue;
-
-      const id = name.replace('.json', '');
-
       if (item.deleted) {
-        deleted.push(id);
+        // Deleted items may lack a name — extract ID from whatever we have
+        if (name.endsWith('.json')) {
+          deleted.push(name.replace('.json', ''));
+        } else if (name.endsWith('.html')) {
+          deleted.push(name.replace('.html', ''));
+        }
+        // If name is empty, we can't determine the article ID — skip
+        // (the reconciliation step in pullFromCloud will catch these)
       } else {
+        // Only process .json metadata files for upserts
+        if (!name.endsWith('.json')) continue;
+
+        const id = name.replace('.json', '');
         // Use @microsoft.graph.downloadUrl if available (avoids extra API call)
         const directUrl = item['@microsoft.graph.downloadUrl'];
         try {

@@ -662,7 +662,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
   }, 5000);
   elapsedIntervals.set(requestId, elapsedInterval);
   const isImageHeavyRecipe = generateImagesFlag || recipeId === 'illustrated';
-  const maxTokens = isImageHeavyRecipe ? 48000 : 16384;
+  const maxTokens = isImageHeavyRecipe ? 48000 : 32768;
   
   console.log('[Transmogrifier] Calling Azure OpenAI (max tokens:', maxTokens, ')...');
   const aiResult = await analyzeWithAI({
@@ -835,7 +835,7 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
   
   // Determine token limits based on recipe complexity
   const isImageHeavyRecipe = generateImagesFlag || recipeId === 'illustrated';
-  const maxTokens = isImageHeavyRecipe ? 48000 : 16384;
+  const maxTokens = isImageHeavyRecipe ? 48000 : 32768;
   
   // Call AI service
   const aiResult = await analyzeWithAI({
