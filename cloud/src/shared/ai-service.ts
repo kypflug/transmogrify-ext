@@ -8,7 +8,7 @@
  * API keys via encrypted settings in the extension/PWA.
  */
 
-import { AIResponse, UserAIConfig } from './types.js';
+import { AIResponse, UserAIConfig, ImagePlaceholder } from './types.js';
 import { buildCloudPrompt } from './recipes.js';
 
 type AIProvider = 'azure-openai' | 'openai' | 'anthropic' | 'google';
@@ -207,7 +207,11 @@ function parseAIResponse(raw: string): AIResponse {
         .replace(/\\n/g, '\n')
         .replace(/\\t/g, '\t')
         .replace(/\\"/g, '"');
-      return { html, explanation: parsed.explanation };
+      const result: AIResponse = { html, explanation: parsed.explanation };
+      if (Array.isArray(parsed.images)) {
+        result.images = parseImagePlaceholders(parsed.images);
+      }
+      return result;
     }
   } catch {
     // Not valid JSON — try to extract JSON from markdown code blocks
@@ -223,7 +227,11 @@ function parseAIResponse(raw: string): AIResponse {
           .replace(/\\n/g, '\n')
           .replace(/\\t/g, '\t')
           .replace(/\\"/g, '"');
-        return { html, explanation: parsed.explanation };
+        const result: AIResponse = { html, explanation: parsed.explanation };
+        if (Array.isArray(parsed.images)) {
+          result.images = parseImagePlaceholders(parsed.images);
+        }
+        return result;
       }
     } catch {
       // Fall through
@@ -237,4 +245,22 @@ function parseAIResponse(raw: string): AIResponse {
   }
 
   throw new Error('Could not parse AI response — no HTML found');
+}
+
+/** Parse and validate image placeholder array from AI response */
+function parseImagePlaceholders(images: unknown[]): ImagePlaceholder[] {
+  return images
+    .filter((img: unknown): img is Record<string, unknown> =>
+      typeof img === 'object' && img !== null &&
+      typeof (img as Record<string, unknown>).id === 'string' &&
+      typeof (img as Record<string, unknown>).prompt === 'string'
+    )
+    .map((img: Record<string, unknown>): ImagePlaceholder => ({
+      id: img.id as string,
+      prompt: img.prompt as string,
+      size: (img.size as ImagePlaceholder['size']) || '1024x1024',
+      style: (img.style as ImagePlaceholder['style']) || 'natural',
+      altText: (img.altText as string) || 'AI generated image',
+      placement: (img.placement as ImagePlaceholder['placement']) || 'inline',
+    }));
 }

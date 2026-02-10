@@ -123,6 +123,7 @@ async function handleQueueJob(
     customPrompt: body.customPrompt,
     accessToken: body.accessToken,
     aiConfig: body.aiConfig,
+    imageConfig: body.imageConfig,
     queuedAt: Date.now(),
   };
 

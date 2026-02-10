@@ -15,6 +15,7 @@ import { fetchAndExtract } from '../shared/content-extractor.js';
 import { generateHTML } from '../shared/ai-service.js';
 import { uploadArticleToUserDrive } from '../shared/onedrive.js';
 import { RECIPE_NAMES } from '../shared/recipes.js';
+import { generateImagesFromPlaceholders, replaceImagePlaceholders, isImageConfigured } from '../shared/image-service.js';
 
 const QUEUE_NAME = 'transmogrify-jobs';
 
@@ -32,7 +33,7 @@ async function processJob(message: unknown, context: InvocationContext): Promise
     return; // Don't retry — bad message
   }
 
-  const { jobId, url, recipeId, customPrompt, accessToken, aiConfig } = job;
+  const { jobId, url, recipeId, customPrompt, accessToken, aiConfig, imageConfig } = job;
   const startTime = Date.now();
   context.log(`Processing job ${jobId}: ${url} (recipe: ${recipeId})`);
 
@@ -52,6 +53,23 @@ async function processJob(message: unknown, context: InvocationContext): Promise
       throw new Error('AI returned empty HTML');
     }
 
+    let finalHtml = aiResult.html;
+
+    // Step 2.5: Generate images if the AI returned placeholders and image config is provided
+    if (aiResult.images && aiResult.images.length > 0 && isImageConfigured(imageConfig)) {
+      context.log(`[${jobId}] Generating ${aiResult.images.length} images...`);
+      try {
+        const generatedImages = await generateImagesFromPlaceholders(imageConfig!, aiResult.images);
+        context.log(`[${jobId}] Generated ${generatedImages.length}/${aiResult.images.length} images`);
+        finalHtml = replaceImagePlaceholders(finalHtml, generatedImages);
+      } catch (imgError) {
+        context.warn(`[${jobId}] Image generation failed, continuing without images:`, imgError);
+        // Continue with placeholder HTML rather than failing the whole job
+      }
+    } else if (aiResult.images && aiResult.images.length > 0) {
+      context.log(`[${jobId}] AI returned ${aiResult.images.length} image placeholders but no image config provided — skipping image generation`);
+    }
+
     // Step 3: Upload to user's OneDrive
     const articleId = `article_${Date.now()}_${crypto.randomUUID().substring(0, 7)}`;
     const now = Date.now();
@@ -65,11 +83,11 @@ async function processJob(message: unknown, context: InvocationContext): Promise
       createdAt: now,
       updatedAt: now,
       isFavorite: false,
-      size: Buffer.byteLength(aiResult.html, 'utf-8'),
+      size: Buffer.byteLength(finalHtml, 'utf-8'),
     };
 
     context.log(`[${jobId}] Uploading article ${articleId} to OneDrive...`);
-    await uploadArticleToUserDrive(accessToken, articleId, aiResult.html, meta);
+    await uploadArticleToUserDrive(accessToken, articleId, finalHtml, meta);
 
     const totalDuration = Math.round((Date.now() - startTime) / 1000);
     context.log(`[${jobId}] Complete! Article "${extracted.title}" (${articleId}) uploaded in ${totalDuration}s`);

@@ -14,7 +14,7 @@
 
 import { getAccessToken } from './auth-service';
 import { resolveCloudUrl } from './config';
-import { getCloudAIConfig } from './settings-service';
+import { getCloudAIConfig, getEffectiveImageConfig } from './settings-service';
 
 export interface CloudQueueResponse {
   jobId: string;
@@ -63,6 +63,9 @@ export async function queueForCloud(
     throw new Error('AI keys are not configured. Set up your AI provider in Settings (⚙️) to use cloud processing.');
   }
 
+  // Get the user's image config — optional, for image-enabled recipes
+  const userImageConfig = await getEffectiveImageConfig();
+
   // Build request body with user's AI keys
   const body: Record<string, unknown> = {
     url,
@@ -70,6 +73,7 @@ export async function queueForCloud(
     accessToken,
     customPrompt,
     aiConfig: userAIConfig,
+    imageConfig: userImageConfig || { provider: 'none' },
   };
 
   const response = await fetch(`${cloudApiUrl}/api/queue`, {
