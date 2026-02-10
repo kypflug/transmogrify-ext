@@ -51,8 +51,7 @@ All API keys and provider settings are managed through the **Settings UI** built
 2. Click the ⚙ gear icon in the extension popup or right-click the extension icon → **Settings**
 3. Choose your **AI Provider** (Azure OpenAI, OpenAI, Anthropic, or Google) and enter your API key
 4. (Optional) Choose an **Image Provider** for AI-generated illustrations
-5. (Optional) Configure a **Cloud API URL** for background processing (defaults to `https://transmogrifier-api.azurewebsites.net` — see [cloud/](./cloud/))
-6. (Optional) Set a **Sync Passphrase** to encrypt settings for OneDrive cross-device sync
+5. (Optional) Set a **Sync Passphrase** to encrypt settings for OneDrive cross-device sync
 
 > **Note:** Anthropic does not currently offer an image generation API.
 

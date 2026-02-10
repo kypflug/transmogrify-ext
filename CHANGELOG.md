@@ -2,6 +2,34 @@
 
 All notable changes to Transmogrifier will be documented in this file.
 
+## [0.5.2] - 2026-02-09
+
+### Added
+- **Cloud image generation** — Cloud pipeline now generates AI images from placeholders in the AI response, supporting Azure OpenAI, OpenAI, and Google Gemini. Image config sent from extension/PWA with each cloud job.
+- **Parallel image generation (cloud)** — Cloud images generated in concurrent batches of 3 (was sequential), with a 90-second per-image timeout. An 8-image job that previously timed out now completes in ~3 minutes.
+- **Mobile viewport support** — All recipe prompts and the shared `RESPONSE_FORMAT` now include explicit instructions for phone viewports down to 375px (iPhone SE): fluid `clamp()` typography, single-column collapse, no horizontal scroll, iOS Safari caveats (`100dvh`, no `background-attachment: fixed`, 44×44px tap targets).
+- **Pending-deletes system** — `syncPendingDeletes` in `chrome.storage.local` tracks recently deleted article IDs for 30 minutes, preventing delta eventual consistency from re-adding them during pull.
+- **Cloud job resolution** — `resolveCloudJobs()` matches pending cloud-queued remixes against synced articles by source URL, clearing stale "pending" status. Runs on every sync alarm (5 min).
+- **Alarm-based cleanup** — `cleanupStaleRemixes()` and `resolveCloudJobs()` now run on `chrome.alarms.onAlarm` instead of a one-shot `setTimeout`, surviving service worker suspension.
+
+### Fixed
+- **Cloud HTML unescaping** — Cloud `parseAIResponse` was missing the `\\n`/`\\t`/`\\"` unescape step, producing literal escape sequences in generated HTML. Now matches the extension's parsing logic.
+- **Cloud `max_tokens` → `max_completion_tokens`** — Azure OpenAI and OpenAI adapters in cloud `ai-service.ts` now use the correct parameter name (newer models reject `max_tokens`).
+- **Deleted articles reappearing** — Delta upserts now filtered against pending-deletes; `downloadCloudArticle` self-heals on 404 by removing stale entries from the cloud index.
+- **Delete race condition** — `DELETE_ARTICLE` handler now awaits local cleanup (`prepareDeleteForSync`) before broadcasting `ARTICLES_CHANGED`, preventing `getMergedArticleList` from immediately re-adding the article as cloud-only.
+- **"Failed to download article"** — Changed to "Article no longer available" with automatic list refresh when a cloud-only article 404s.
+- **Stuck cloud remixes** — Service worker now enforces 15-minute max age on cloud-queued remixes at startup.
+
+### Changed
+- **Image count limits tightened** — Illustrated recipe: 3–5 images (was 5–10). Visualize: 2–4 (was unbounded). Shared `RESPONSE_FORMAT_WITH_IMAGES`: "2–5, prefer the low end, absolute max 10."
+- **Cloud recipes synced** — Cloud recipe prompts now match extension prompts exactly, including all responsive design rules, interview chat structure, and aesthetic mood options.
+- **Image generation timing logged** — Cloud process function now logs concurrency level and total image generation duration.
+- **Interview recipe** — Prescriptive HTML/CSS structure for proper chat bubble alignment, avatar positioning, and responsive breakpoints.
+- **Aesthetic recipe** — Added responsive design rules (fluid typography, grid collapse, overflow handling).
+- **Visualize recipe** — Added responsive rules and image handling (`max-width`, `object-fit:contain`, preserve source image links).
+- **Default `max_completion_tokens`** — Increased from 16384 to 32768 to prevent truncation on longer articles.
+- **`.funcignore`** — Excludes `node_modules` but keeps `.ts` files for remote build.
+
 ## [0.5.1] - 2026-02-09
 
 ### Added
