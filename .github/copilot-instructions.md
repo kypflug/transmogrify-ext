@@ -43,3 +43,15 @@ src/
 - Content scripts kept lightweight
 - Semantic HTML in UI
 - `npm run build` = `tsc && vite build`
+
+## Cloud Functions (Azure)
+- Deploy: `cd cloud && func azure functionapp publish transmogrifier-api --build remote`
+- ALWAYS use `--build remote` — this excludes `node_modules` (via `.funcignore`) and builds TypeScript on the server
+- Never deploy without `--build remote`; uploading `node_modules` locally creates 500MB+ packages that time out
+- `.funcignore` must keep `node_modules` excluded and must NOT exclude `*.ts` or `tsconfig.json` (needed for remote build)
+
+## AI Provider API Gotchas
+- **OpenAI / Azure OpenAI**: use `max_completion_tokens` (NOT `max_tokens` — the old parameter is rejected by newer models like o1/o3/o4)
+- **Anthropic**: use `max_tokens` (their API still uses the old name)
+- **Google Gemini**: use `maxOutputTokens` inside `generationConfig`
+- Always keep the cloud function (`cloud/src/shared/ai-service.ts`) in sync with the extension (`src/shared/ai-service.ts`)

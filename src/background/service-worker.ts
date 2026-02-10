@@ -178,9 +178,19 @@ async function cleanupStaleRemixes(): Promise<{ cleaned: number; remaining: numb
     
     if (!hasController) {
       // Cloud-queued jobs don't have controllers — they're fire-and-forget.
-      // They get cleaned up by their own scheduleCleanup timer.
+      // The original scheduleCleanup timer may have been lost if the service
+      // worker was suspended, so enforce a max age here.
       if (remix.status === 'cloud-queued') {
-        // Update step text as time passes
+        if (elapsed > 15 * 60 * 1000) {
+          // Cloud job has been sitting for over 15 minutes — clean it up.
+          // The article (if processed) will appear on the next sync pull.
+          console.log(`[Transmogrifier] Cleaning stale cloud job ${id} (${Math.round(elapsed / 1000)}s old)`);
+          cleaned.push(id);
+          changed = true;
+          // Don't add to remaining — remove entirely
+          continue;
+        }
+        // Still within the 15-minute window — update step text
         if (elapsed > 5 * 60 * 1000) {
           remix.step = 'Processing... article will appear on next sync';
           changed = true;
@@ -203,7 +213,7 @@ async function cleanupStaleRemixes(): Promise<{ cleaned: number; remaining: numb
     } else {
       // Controller exists - request is still running. Add warnings if long.
       if (elapsed > LONG_WARNING_THRESHOLD_MS) {
-        remix.warning = `Running for ${Math.round(elapsed / 1000)}s Ã¢â‚¬â€ this is unusually long but may still complete`;
+        remix.warning = `Running for ${Math.round(elapsed / 1000)}s — this is unusually long but may still complete`;
         changed = true;
       } else if (elapsed > WARNING_THRESHOLD_MS) {
         remix.warning = `Taking longer than usual (${Math.round(elapsed / 1000)}s)`;
