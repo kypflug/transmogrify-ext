@@ -120,7 +120,16 @@ HTML REQUIREMENTS:
 - Use semantic HTML5 elements (article, section, header, main, figure, etc.)
 - Make it fully responsive with mobile-first CSS
 - Use modern CSS (flexbox, grid, custom properties, clamp())
-- Include a viewport meta tag
+- Include a viewport meta tag: <meta name="viewport" content="width=device-width, initial-scale=1">
+- PHONE VIEWPORT SUPPORT (CRITICAL): The page MUST look correct on phone screens as narrow as 375px (iPhone SE). Test every layout decision against a 375px viewport. Key rules:
+  - Use fluid typography with clamp() — no font sizes that overflow at 375px
+  - All containers: max-width: 100vw; box-sizing: border-box; overflow-wrap: break-word
+  - No horizontal scrollbar — ever. No element may exceed viewport width
+  - Grids/multi-column layouts must collapse to single column at narrow widths
+  - Padding/margins: scale down on small screens (use clamp() or @media max-width: 480px)
+  - Images: max-width: 100%; height: auto
+  - Avoid fixed-width elements, large fixed padding, or absolute positioning that breaks on small screens
+  - iOS Safari: avoid 100vh (use min-height: 100dvh or omit), avoid background-attachment: fixed on mobile (causes repaint issues), ensure tap targets are at least 44×44px
 - Preserve ALL substantive content from the source - don't summarize or truncate
 - DISCARD any obvious website UI debris that leaked into the extracted content: navigation links, "Follow" buttons, topic tags, "See All" links, cookie/newsletter prompts, "Close" labels, share widgets, subscription CTAs, ad text, and repetitive boilerplate. Use your judgement - if it's clearly site chrome and not article content, omit it.
 - Convert markdown-style links [text](url) to proper <a> tags
@@ -201,6 +210,15 @@ HTML REQUIREMENTS:
 - Use semantic HTML5 elements
 - Make it fully responsive with mobile-first CSS
 - Use modern CSS (flexbox, grid, custom properties, clamp())
+- Include a viewport meta tag: <meta name="viewport" content="width=device-width, initial-scale=1">
+- PHONE VIEWPORT SUPPORT (CRITICAL): The page MUST look correct on phone screens as narrow as 375px (iPhone SE). Key rules:
+  - Use fluid typography with clamp() — no font sizes that overflow at 375px
+  - All containers: max-width: 100vw; box-sizing: border-box; overflow-wrap: break-word
+  - No horizontal scrollbar — ever. No element may exceed viewport width
+  - Grids/multi-column layouts must collapse to single column at narrow widths
+  - Padding/margins: scale down on small screens (use clamp() or @media max-width: 480px)
+  - Images: max-width: 100%; height: auto
+  - iOS Safari: avoid 100vh (use min-height: 100dvh or omit), avoid background-attachment: fixed on mobile (causes repaint issues), ensure tap targets are at least 44×44px
 - Preserve ALL substantive content from the source
 - DISCARD any obvious website UI debris that leaked into the extracted content: navigation links, "Follow" buttons, topic tags, "See All" links, cookie/newsletter prompts, "Close" labels, share widgets, subscription CTAs, ad text, and repetitive boilerplate. Use your judgement - if it's clearly site chrome and not article content, omit it.
 - For AI-generated images, use placeholder: <img src="{{IMAGE_ID}}" alt="...">
@@ -234,7 +252,8 @@ IMAGE PLACEHOLDERS:
 - Match the "id" field in the images array
 - placement options: "hero" (top banner), "inline" (within content), "background" (section bg), "accent" (decorative)
 - Write detailed, evocative prompts specifying subject, composition, style, color palette, mood
-- Be selective - each image should genuinely enhance the content
+- Be selective — each image should genuinely enhance the content
+- LIMITS: Generate 2-5 images total (absolute maximum 10). Prefer the low end — 3 excellent images beat 8 mediocre ones. Each image costs generation time, so only include images that truly add value
 
 SAVE BUTTON: Include this exact HTML at the end of <body> for the save functionality:
 ${SAVE_BUTTON_SCRIPT}
@@ -294,6 +313,15 @@ LAYOUT:
 - Generous section spacing (3-4rem between sections)
 - Blockquotes with a thin left border in the accent color and italic Literata
 - Code blocks with a slightly tinted background and monospace font
+
+MOBILE VIEWPORT (CRITICAL — must work at 375px / iPhone SE):
+- On small screens (max-width: 480px): reduce the title top margin to ~10vh, reduce section spacing to 2rem, reduce side padding to 16px
+- Use clamp() for body font-size: e.g. clamp(16px, 1.15vw + 14px, 19px) so text stays readable without overflow
+- Heading font sizes must also scale down fluidly — never overflow the viewport
+- Ensure the single-column layout fits within 375px with no horizontal scroll
+- box-sizing: border-box on *, overflow-wrap: break-word on body
+- Code blocks: use overflow-x: auto so long lines scroll within the block, not the page
+- iOS Safari: avoid 100vh (use min-height: 100dvh or omit), avoid background-attachment: fixed (causes repaint/jank on iOS)
 
 ${RESPONSE_FORMAT}`;
       user = `Transform this content into a focused, contemplative reading experience:\n\n${content}\n\nCreate a complete HTML document that feels like opening a beautifully typeset book.`;
@@ -390,16 +418,17 @@ LAYOUT:
 - Full-bleed sections alternating with contained text
 - Content should feel DESIGNED, not just "displayed"
 
-RESPONSIVE DESIGN (CRITICAL):
+RESPONSIVE DESIGN (CRITICAL — must work down to 375px / iPhone SE):
 - All text must be able to wrap — never use white-space:nowrap on content text
 - Use fluid typography with clamp() for headings: e.g. clamp(1.8rem, 5vw, 5rem)
 - Grid layouts must collapse gracefully: use auto-fit/auto-fill with minmax(), or switch to single-column below 768px
 - Overlapping elements must reflow on small screens — no content hidden behind other content
 - All containers must use overflow-wrap:break-word and max-width:100vw to prevent horizontal scroll
 - Images: max-width:100%; height:auto — never let images overflow their container
-- Test mentally at 360px, 768px, and 1200px — the design should work at all three
-- On mobile (max-width: 600px): collapse multi-column grids to single column, reduce dramatic whitespace, scale down oversized type
+- Test mentally at 375px (iPhone SE), 768px, and 1200px — the design MUST work at all three
+- On mobile (max-width: 480px): collapse multi-column grids to single column, reduce dramatic whitespace, scale down oversized type, reduce padding to 16px or less
 - box-sizing: border-box on all elements
+- iOS Safari: avoid 100vh (use min-height: 100dvh or omit), avoid background-attachment: fixed on mobile (causes repaint/jank), ensure all tap targets are at least 44×44px
 
 DON'T be predictable. CREATE something a human designer would be proud of.
 
@@ -447,16 +476,16 @@ LAYOUT:
 - Pull quotes with hanging quotation marks in Cormorant Garamond
 
 IMAGE GUIDELINES:
-- Aim for 5-10 images maximum
+- Aim for 3-5 images total (absolute maximum 6)
 - 1 hero image that captures the article's essential mood
-- 3-5 inline images illustrating key sections or concepts
+- 2-4 inline images illustrating key sections or concepts
 - Write prompts that specify: editorial photography style, warm natural lighting, shallow depth-of-field where appropriate
 - Color palette of generated images should complement the page (warm, earthy tones)
 - For technical content: use illustration style (hand-drawn diagrams, watercolor-style infographics)
 - For narrative content: cinematic photography style
 
 ${RESPONSE_FORMAT_WITH_IMAGES}`;
-      user = `Transform this content into a beautifully illustrated editorial feature:\n\n${content}\n\nCreate an HTML document with 5-10 thoughtfully placed AI-generated images. Each image should feel intentionally chosen, like a magazine photo editor curated them.`;
+      user = `Transform this content into a beautifully illustrated editorial feature:\n\n${content}\n\nCreate an HTML document with 3-5 thoughtfully placed AI-generated images. Each image should feel intentionally chosen, like a magazine photo editor curated them.`;
       break;
 
     case 'visualize':
@@ -501,14 +530,16 @@ LAYOUT:
 - Flow diagrams described as numbered steps with connecting lines (CSS borders)
 - Summary/overview panel at top with key metrics
 
-RESPONSIVE DESIGN (CRITICAL):
+RESPONSIVE DESIGN (CRITICAL — must work down to 375px / iPhone SE):
 - All text must wrap naturally — never use white-space:nowrap on content text, long words must break with overflow-wrap:break-word
 - Grid layouts: use auto-fit/auto-fill with minmax(min(100%, 280px), 1fr) so columns collapse on narrow screens
 - Sidenotes/margin notes: on screens below 900px, inline them as styled callout blocks within the main flow
 - Comparison tables: use overflow-x:auto on a wrapper so tables scroll horizontally rather than breaking the layout
 - All containers: max-width:100vw, box-sizing:border-box — no horizontal scrollbar ever
-- On mobile (max-width: 600px): single-column layout, full-width panels, reduce padding
+- On mobile (max-width: 480px): single-column layout, full-width panels, reduce padding to 12-16px
 - Data panels and callout boxes must use min-width:0 inside grid/flex to allow shrinking
+- Test at 375px width — every grid, table, and panel must remain usable without horizontal scroll
+- iOS Safari: avoid 100vh (use min-height: 100dvh or omit), avoid background-attachment: fixed on mobile (causes repaint/jank), ensure all tap targets are at least 44×44px
 
 IMAGE HANDLING (CRITICAL):
 - ALL images (generated or passed through from source) must use: max-width:100%; height:auto; display:block — never let an image overflow its container
@@ -518,6 +549,7 @@ IMAGE HANDLING (CRITICAL):
 - Use object-fit:contain (not cover) for diagram/infographic images so nothing gets cropped
 
 IMAGE GUIDELINES:
+- Generate 2-4 images total (absolute maximum 6) — only where a diagram genuinely clarifies the content
 - Focus exclusively on DIAGRAMS and INFOGRAPHICS, not decorative images
 - Prompt for: clean vector-style diagrams, flowcharts with clear labels, process illustrations
 - Use flat design style with the page's color palette

@@ -422,7 +422,9 @@ async function selectArticle(id: string) {
           // Refresh list to remove cloud-only flag
           await loadArticles();
         } else {
-          readingInfo.textContent = 'Failed to download article';
+          // Article no longer exists on OneDrive — refresh list to remove the stale entry
+          readingInfo.textContent = 'Article no longer available';
+          await loadArticles();
           return;
         }
       } else {

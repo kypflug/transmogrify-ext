@@ -22,6 +22,7 @@ import {
 import { signIn, signOut, isSignedIn, getUserInfo } from '../shared/auth-service';
 import {
   pushArticleToCloud,
+  prepareDeleteForSync,
   pushDeleteToCloud,
   pushMetaUpdateToCloud,
   pullFromCloud,
@@ -29,6 +30,7 @@ import {
   toggleCloudFavorite,
   getSyncState,
   setupSyncAlarm,
+  getCloudIndex,
 } from '../shared/sync-service';
 import { queueForCloud, isCloudQueueConfiguredAsync } from '../shared/cloud-queue-service';
 import { uploadSettings, downloadSettings } from '../shared/onedrive-service';
@@ -238,6 +240,87 @@ async function cleanupStaleRemixes(): Promise<{ cleaned: number; remaining: numb
 cleanupStaleRemixes().catch(console.error);
 
 /**
+ * Resolve cloud-queued remixes whose articles have arrived via sync.
+ * Matches active cloud-queued jobs by sourceUrl against the cloud index.
+ * If a matching article was created after the job was queued, mark complete.
+ */
+async function resolveCloudJobs(): Promise<number> {
+  const remixes = await getActiveRemixes();
+  const cloudJobs = Object.entries(remixes).filter(
+    ([, r]) => r.status === 'cloud-queued' && r.sourceUrl
+  );
+
+  if (cloudJobs.length === 0) return 0;
+
+  // Build a map of sourceUrl → cloud-queued remix entries
+  const urlToJobs = new Map<string, string[]>();
+  for (const [id, remix] of cloudJobs) {
+    const url = remix.sourceUrl!;
+    const existing = urlToJobs.get(url) || [];
+    existing.push(id);
+    urlToJobs.set(url, existing);
+  }
+
+  // Check both local articles and cloud index for matches
+  let localArticles: { originalUrl: string; createdAt: number; id: string }[] = [];
+  try {
+    localArticles = (await getAllArticles()).map(a => ({
+      originalUrl: a.originalUrl,
+      createdAt: a.createdAt,
+      id: a.id,
+    }));
+  } catch { /* ignore */ }
+
+  let cloudIndex: { originalUrl: string; createdAt: number; id: string }[] = [];
+  try {
+    cloudIndex = await getCloudIndex();
+  } catch { /* ignore */ }
+
+  const allArticles = [...localArticles, ...cloudIndex];
+  let resolved = 0;
+
+  for (const [jobId, remix] of cloudJobs) {
+    const match = allArticles.find(
+      a => a.originalUrl === remix.sourceUrl && a.createdAt >= remix.startTime
+    );
+    if (match) {
+      console.log(`[Transmogrifier] Cloud job ${jobId} resolved — article ${match.id} arrived`);
+      remixes[jobId] = {
+        ...remix,
+        status: 'complete',
+        step: 'Article delivered',
+        articleId: match.id,
+      };
+      resolved++;
+    }
+  }
+
+  if (resolved > 0) {
+    await chrome.storage.local.set({ activeRemixes: remixes });
+    await updateBadge(remixes);
+    // Schedule cleanup for resolved jobs
+    for (const [jobId, remix] of Object.entries(remixes)) {
+      if (remix.status === 'complete' && remix.articleId) {
+        scheduleCleanup(jobId, 5000);
+      }
+    }
+    // Notify open pages
+    chrome.runtime.sendMessage({ type: 'PROGRESS_UPDATE' }).catch(() => {});
+  }
+
+  return resolved;
+}
+
+// On every alarm tick (e.g. the 5-min sync alarm), run stale-job cleanup
+// and try to resolve cloud-queued jobs whose articles have arrived.
+// This is critical because setTimeout-based cleanup is lost when the
+// service worker is suspended by the browser.
+chrome.alarms.onAlarm.addListener(() => {
+  cleanupStaleRemixes().catch(console.error);
+  resolveCloudJobs().catch(console.error);
+});
+
+/**
  * Restore viewer/library tabs that were invalidated by an extension reload.
  * Finds tabs showing the "Extension context invalidated" error page and
  * re-opens them at the correct extension URL.
@@ -420,8 +503,12 @@ async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
       try {
         const delId = message.payload?.articleId || '';
         await deleteArticle(delId);
-        pushDeleteToCloud(delId).catch(() => {});
+        // Await local sync cleanup (cloud index + pending-delete) before broadcasting,
+        // so getMergedArticleList won't re-surface the article as cloud-only.
+        await prepareDeleteForSync(delId);
         broadcastArticlesChanged('delete');
+        // Fire-and-forget the slow remote OneDrive delete
+        pushDeleteToCloud(delId).catch(() => {});
         return { success: true };
       } catch (error) {
         return { success: false, error: String(error) };

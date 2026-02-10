@@ -57,10 +57,12 @@ async function processJob(message: unknown, context: InvocationContext): Promise
 
     // Step 2.5: Generate images if the AI returned placeholders and image config is provided
     if (aiResult.images && aiResult.images.length > 0 && isImageConfigured(imageConfig)) {
-      context.log(`[${jobId}] Generating ${aiResult.images.length} images...`);
+      context.log(`[${jobId}] Generating ${aiResult.images.length} images (concurrency: 3)...`);
+      const imageStart = Date.now();
       try {
         const generatedImages = await generateImagesFromPlaceholders(imageConfig!, aiResult.images);
-        context.log(`[${jobId}] Generated ${generatedImages.length}/${aiResult.images.length} images`);
+        const imageDuration = Math.round((Date.now() - imageStart) / 1000);
+        context.log(`[${jobId}] Generated ${generatedImages.length}/${aiResult.images.length} images in ${imageDuration}s`);
         finalHtml = replaceImagePlaceholders(finalHtml, generatedImages);
       } catch (imgError) {
         context.warn(`[${jobId}] Image generation failed, continuing without images:`, imgError);

@@ -29,6 +29,7 @@ import {
 // Sync state persistence
 const SYNC_STATE_KEY = 'syncState';
 const SYNC_INDEX_KEY = 'syncArticleIndex'; // cloud-only article metadata cache
+const PENDING_DELETES_KEY = 'syncPendingDeletes'; // IDs deleted locally, awaiting delta confirmation
 
 export interface SyncState {
   lastSyncTime: number;
@@ -60,6 +61,41 @@ export async function getCloudIndex(): Promise<OneDriveArticleMeta[]> {
 
 async function setCloudIndex(index: OneDriveArticleMeta[]): Promise<void> {
   await chrome.storage.local.set({ [SYNC_INDEX_KEY]: index });
+}
+
+// ─── Pending Deletes ────────────────────────────────
+// Tracks article IDs deleted locally so delta upserts don't re-add them.
+// Each entry is { id, deletedAt } so we can expire stale entries.
+
+interface PendingDelete { id: string; deletedAt: number; }
+
+async function getRawPendingDeletes(): Promise<PendingDelete[]> {
+  const result = await chrome.storage.local.get(PENDING_DELETES_KEY);
+  return result[PENDING_DELETES_KEY] || [];
+}
+
+async function getPendingDeletes(): Promise<Set<string>> {
+  const raw = await getRawPendingDeletes();
+  return new Set(raw.map(d => d.id));
+}
+
+async function addPendingDelete(articleId: string): Promise<void> {
+  const current = await getRawPendingDeletes();
+  if (!current.some(d => d.id === articleId)) {
+    current.push({ id: articleId, deletedAt: Date.now() });
+    await chrome.storage.local.set({ [PENDING_DELETES_KEY]: current });
+  }
+}
+
+/** Remove confirmed deletes + expire entries older than 30 minutes */
+async function cleanupPendingDeletes(confirmed: Set<string>): Promise<void> {
+  const current = await getRawPendingDeletes();
+  const MAX_AGE_MS = 30 * 60 * 1000;
+  const now = Date.now();
+  const filtered = current.filter(
+    d => !confirmed.has(d.id) && (now - d.deletedAt) < MAX_AGE_MS
+  );
+  await chrome.storage.local.set({ [PENDING_DELETES_KEY]: filtered });
 }
 
 // ─── Push Operations (local → cloud) ────────────────
@@ -94,21 +130,30 @@ export async function pushArticleToCloud(article: SavedArticle): Promise<void> {
 }
 
 /**
- * Push a delete to OneDrive
+ * Prepare a delete for sync: mark as pending-delete and remove from cloud index.
+ * This is fast (local storage only) and MUST complete before any UI refresh
+ * so getMergedArticleList doesn't re-surface the article.
+ */
+export async function prepareDeleteForSync(articleId: string): Promise<void> {
+  await addPendingDelete(articleId);
+  const index = await getCloudIndex();
+  await setCloudIndex(index.filter(a => a.id !== articleId));
+}
+
+/**
+ * Push a delete to OneDrive.
+ * Call prepareDeleteForSync first (and await it) before firing this.
  */
 export async function pushDeleteToCloud(articleId: string): Promise<void> {
   if (!(await isSignedIn())) return;
 
   try {
     await deleteRemoteArticle(articleId);
-
-    // Remove from cloud index
-    const index = await getCloudIndex();
-    await setCloudIndex(index.filter(a => a.id !== articleId));
-
     console.log('[Sync] Pushed delete to cloud:', articleId);
   } catch (err) {
     console.error('[Sync] Failed to push delete to cloud:', err);
+    // Cloud index is already cleaned and pending-delete is tracked,
+    // so the article won't reappear even if the push failed.
   }
 }
 
@@ -166,11 +211,20 @@ export async function pullFromCloud(): Promise<{ pulled: number; deleted: number
     let pulled = 0;
     let deleted = 0;
 
+    // Load pending deletes — IDs we've deleted locally that may still appear
+    // in the delta due to OneDrive's eventual consistency.
+    const pendingDeletes = await getPendingDeletes();
+
     // Process upserts — update cloud index, don't download HTML yet (lazy)
     const cloudIndex = await getCloudIndex();
     const indexMap = new Map(cloudIndex.map(a => [a.id, a]));
 
     for (const remoteMeta of delta.upserted) {
+      // Skip articles we've locally deleted — delta may be stale
+      if (pendingDeletes.has(remoteMeta.id)) {
+        console.log('[Sync] Skipping upsert for pending-delete article:', remoteMeta.id);
+        continue;
+      }
       indexMap.set(remoteMeta.id, remoteMeta);
 
       // If article exists locally, check for conflict
@@ -196,8 +250,10 @@ export async function pullFromCloud(): Promise<{ pulled: number; deleted: number
     await setCloudIndex(Array.from(indexMap.values()));
 
     // Process deletes
+    const confirmedDeletes = new Set<string>();
     for (const deletedId of delta.deleted) {
       indexMap.delete(deletedId);
+      confirmedDeletes.add(deletedId);
       if (localIds.has(deletedId)) {
         try {
           await localDelete(deletedId);
@@ -207,6 +263,15 @@ export async function pullFromCloud(): Promise<{ pulled: number; deleted: number
         }
       }
     }
+
+    // Also remove any pending deletes from the cloud index (in case they
+    // were re-added by a stale full-resync / listRemoteArticles fallback)
+    for (const pendingId of pendingDeletes) {
+      indexMap.delete(pendingId);
+    }
+
+    // Expire confirmed + old pending deletes (> 30 minutes)
+    await cleanupPendingDeletes(confirmedDeletes);
 
     await setCloudIndex(Array.from(indexMap.values()));
     await setSyncState({ lastSyncTime: Date.now(), isSyncing: false });
@@ -279,6 +344,14 @@ export async function downloadCloudArticle(articleId: string): Promise<SavedArti
     const article = await saveOrUpdateArticle(meta, html);
     return article;
   } catch (err) {
+    // If the file no longer exists on OneDrive (404), remove the stale
+    // cloud index entry so the article stops reappearing.
+    const errMsg = String(err);
+    if (errMsg.includes('(404)') || errMsg.includes('Not Found')) {
+      console.warn('[Sync] Article no longer on OneDrive, removing from cloud index:', articleId);
+      await setCloudIndex(cloudIndex.filter(a => a.id !== articleId));
+      return null;
+    }
     console.error('[Sync] Failed to download cloud article:', articleId, err);
     throw err;
   }
@@ -320,12 +393,13 @@ export async function getMergedArticleList(): Promise<(ArticleSummary & { cloudO
   const localArticles = await getAllArticles();
   const localIds = new Set(localArticles.map(a => a.id));
   const cloudIndex = await getCloudIndex();
+  const pendingDeletes = await getPendingDeletes();
 
   const merged: (ArticleSummary & { cloudOnly?: boolean })[] = [...localArticles];
 
-  // Add cloud-only articles
+  // Add cloud-only articles (skip pending deletes)
   for (const cloud of cloudIndex) {
-    if (!localIds.has(cloud.id)) {
+    if (!localIds.has(cloud.id) && !pendingDeletes.has(cloud.id)) {
       merged.push({
         id: cloud.id,
         title: cloud.title,

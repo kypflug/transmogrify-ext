@@ -14,8 +14,16 @@ export interface GeneratedImageData {
   altText: string;
 }
 
+/** Max images generated concurrently per batch */
+const IMAGE_CONCURRENCY = 3;
+/** Per-image timeout — prevents a single slow image from eating the entire budget */
+const IMAGE_TIMEOUT_MS = 90_000; // 90 seconds
+
 /**
- * Generate images from AI-provided placeholders using the user's image config
+ * Generate images from AI-provided placeholders using the user's image config.
+ * Images are generated in parallel batches (up to IMAGE_CONCURRENCY at a time)
+ * to stay well within the Azure Functions 10-minute timeout while respecting
+ * provider rate limits.
  */
 export async function generateImagesFromPlaceholders(
   config: UserImageConfig,
@@ -25,22 +33,51 @@ export async function generateImagesFromPlaceholders(
 
   const results: GeneratedImageData[] = [];
 
-  // Process images sequentially to avoid rate limits
-  for (let i = 0; i < placeholders.length; i++) {
-    const placeholder = placeholders[i];
-    const result = await generateSingleImage(config, placeholder);
+  // Process images in parallel batches to balance speed vs rate limits
+  for (let i = 0; i < placeholders.length; i += IMAGE_CONCURRENCY) {
+    const batch = placeholders.slice(i, i + IMAGE_CONCURRENCY);
+    const batchResults = await Promise.all(
+      batch.map(placeholder => generateSingleImageWithTimeout(config, placeholder)),
+    );
+    results.push(...batchResults.filter((r): r is GeneratedImageData => r !== null));
 
-    if (result) {
-      results.push(result);
-    }
-
-    // Small delay between requests to be nice to the API
-    if (i < placeholders.length - 1) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
+    // Small delay between batches to be respectful of rate limits
+    if (i + IMAGE_CONCURRENCY < placeholders.length) {
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
   }
 
   return results;
+}
+
+/** Run a promise with a timeout; rejects if the promise doesn't settle in time */
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout>;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutId!);
+  }
+}
+
+/** Wrapper that applies a per-image timeout and catches errors gracefully */
+async function generateSingleImageWithTimeout(
+  config: UserImageConfig,
+  placeholder: ImagePlaceholder,
+): Promise<GeneratedImageData | null> {
+  try {
+    return await withTimeout(
+      generateSingleImage(config, placeholder),
+      IMAGE_TIMEOUT_MS,
+      `Image ${placeholder.id}`,
+    );
+  } catch (error) {
+    console.error(`[Cloud] Image generation failed for ${placeholder.id}:`, error);
+    return null;
+  }
 }
 
 /**
