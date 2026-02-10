@@ -20,11 +20,12 @@ src/
   settings/        # Settings UI (API keys, providers, encryption passphrase)
   viewer/          # Article viewer page
   background/      # Service worker (orchestration + sync)
-  shared/          # Services: ai, image, storage, auth, onedrive, sync, crypto, settings, recipes
+  shared/          # Services: ai, image, storage, auth, onedrive, sync, crypto, settings, recipes, blob-storage
 ```
 
 ## Key Patterns
 - BYOK: All API keys configured via Settings UI, encrypted at rest with per-device CryptoKey (AES-256-GCM)
+- BYOS: Article sharing uses user's own Azure Blob Storage (configured in Settings, synced via encrypted settings)
 - Two-tier encryption: device key (IndexedDB) for local, user passphrase (PBKDF2 600k) for OneDrive sync
 - Sync passphrase in `chrome.storage.session` (memory-only); device-encrypted envelope in `chrome.storage.local`
 - Popup -> service worker -> content script messaging via `chrome.runtime`
@@ -34,6 +35,8 @@ src/
 - Cloud index rebuilt from pull/delta only (not updated on push)
 - Generated HTML rendered in sandboxed iframes
 - Cloud jobs: POST /api/queue -> Storage Queue -> queue-trigger function -> OneDrive upload
+- Sharing: blob upload -> POST /api/share -> Table Storage short link -> transmogrifia.app/shared/{code}
+- Short link resolver: GET /api/s/{code} -> blob URL (public, no auth)
 - Default cloud URL hardcoded in settings-service.ts (`transmogrifier-api.azurewebsites.net`)
 - 8 recipes: Focus, Reader, Aesthetic, Illustrated, Visualize, Declutter, Interview, Custom
 

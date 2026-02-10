@@ -10,6 +10,7 @@ import {
   toggleFavorite,
   exportArticleToFile,
   getStorageStats,
+  updateArticleShareStatus,
   type ArticleSummary,
   type SavedArticle,
 } from '../shared/storage-service';
@@ -55,6 +56,7 @@ const btnOriginal = document.getElementById('btnOriginal') as HTMLButtonElement;
 const btnNewTab = document.getElementById('btnNewTab') as HTMLButtonElement;
 const btnRespin = document.getElementById('btnRespin') as HTMLButtonElement;
 const btnDelete = document.getElementById('btnDelete') as HTMLButtonElement;
+const btnShare = document.getElementById('btnShare') as HTMLButtonElement;
 
 const resizeHandle = document.getElementById('resizeHandle') as HTMLElement;
 const mobileBack = document.getElementById('mobileBack') as HTMLButtonElement;
@@ -67,6 +69,13 @@ const customPromptInput = document.getElementById('customPromptInput') as HTMLTe
 const generateImagesCheck = document.getElementById('generateImagesCheck') as HTMLInputElement;
 const cancelRespinBtn = document.getElementById('cancelRespinBtn') as HTMLButtonElement;
 const confirmRespinBtn = document.getElementById('confirmRespinBtn') as HTMLButtonElement;
+
+// Share modal
+const shareModal = document.getElementById('shareModal') as HTMLElement;
+const shareModalBody = document.getElementById('shareModalBody') as HTMLElement;
+const shareModalFooter = document.getElementById('shareModalFooter') as HTMLElement;
+const cancelShareBtn = document.getElementById('cancelShareBtn') as HTMLButtonElement;
+const confirmShareBtn = document.getElementById('confirmShareBtn') as HTMLButtonElement;
 
 // Delete modal
 const deleteModal = document.getElementById('deleteModal') as HTMLElement;
@@ -452,6 +461,9 @@ async function selectArticle(id: string) {
     favoriteIcon.textContent = article.isFavorite ? '★' : '☆';
     btnFavorite.classList.toggle('active', article.isFavorite);
 
+    // Update share button state
+    updateShareButtonState();
+
     // Render content in iframe (hide the save FAB — redundant with header save button)
     // Fix any leftover double-escaped Unicode sequences from older AI generations
     const cleanHtml = article.html.replace(
@@ -537,6 +549,154 @@ function handleNewTab() {
   const blob = new Blob([currentArticle.html], { type: 'text/html' });
   const url = URL.createObjectURL(blob);
   window.open(url, '_blank');
+}
+
+// ─── Share ───────────────────────────────────────────
+
+function handleShareClick() {
+  if (!currentArticle) return;
+
+  if (currentArticle.sharedUrl) {
+    // Already shared — show existing link with copy + unshare options
+    shareModalBody.innerHTML = `
+      <p>This article is shared:</p>
+      <div class="share-url-row">
+        <input type="text" class="share-url-input" id="shareUrlInput" value="${escapeAttr(currentArticle.sharedUrl)}" readonly>
+        <button class="btn btn-secondary" id="copyShareUrlBtn" title="Copy to clipboard">📋</button>
+      </div>
+      ${currentArticle.shareExpiresAt ? `<p class="share-expires">Expires: ${new Date(currentArticle.shareExpiresAt).toLocaleDateString()}</p>` : ''}
+    `;
+    shareModalFooter.innerHTML = `
+      <button class="modal-btn cancel" id="cancelShareBtn2">Close</button>
+      <button class="modal-btn danger" id="unshareBtn">Unshare</button>
+    `;
+    // Wire up dynamic buttons
+    document.getElementById('copyShareUrlBtn')!.addEventListener('click', () => {
+      navigator.clipboard.writeText(currentArticle!.sharedUrl!).then(() => {
+        document.getElementById('copyShareUrlBtn')!.textContent = '✓';
+        setTimeout(() => { document.getElementById('copyShareUrlBtn')!.textContent = '📋'; }, 2000);
+      });
+    });
+    document.getElementById('cancelShareBtn2')!.addEventListener('click', () => shareModal.classList.add('hidden'));
+    document.getElementById('unshareBtn')!.addEventListener('click', handleUnshare);
+  } else {
+    // Not shared — show share form
+    shareModalBody.innerHTML = `
+      <p>Share this article with a public link. Anyone with the link can view it.</p>
+      <div class="field-row">
+        <label for="shareExpiration">Expires</label>
+        <select id="shareExpiration">
+          <option value="0">Never</option>
+          <option value="7">7 days</option>
+          <option value="30" selected>30 days</option>
+          <option value="90">90 days</option>
+        </select>
+      </div>
+    `;
+    shareModalFooter.innerHTML = `
+      <button class="modal-btn cancel" id="cancelShareBtn2">Cancel</button>
+      <button class="modal-btn primary" id="confirmShareBtn2">📤 Share</button>
+    `;
+    document.getElementById('cancelShareBtn2')!.addEventListener('click', () => shareModal.classList.add('hidden'));
+    document.getElementById('confirmShareBtn2')!.addEventListener('click', handleShareConfirm);
+  }
+
+  shareModal.classList.remove('hidden');
+}
+
+async function handleShareConfirm() {
+  if (!currentArticle) return;
+
+  const expirationDays = parseInt((document.getElementById('shareExpiration') as HTMLSelectElement)?.value || '0');
+  const expiresAt = expirationDays > 0 ? Date.now() + expirationDays * 24 * 60 * 60 * 1000 : undefined;
+
+  // Disable button and show progress
+  const btn = document.getElementById('confirmShareBtn2') || confirmShareBtn;
+  btn.setAttribute('disabled', '');
+  btn.textContent = 'Sharing…';
+
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'SHARE_ARTICLE',
+      payload: { articleId: currentArticle.id, expiresAt },
+    });
+
+    if (response?.success && response.shareResult) {
+      // Update local article record
+      await updateArticleShareStatus(currentArticle.id, {
+        sharedUrl: response.shareResult.shareUrl,
+        sharedBlobUrl: response.shareResult.blobUrl,
+        shareShortCode: response.shareResult.shortCode,
+        sharedAt: Date.now(),
+        shareExpiresAt: expiresAt,
+      });
+
+      // Copy to clipboard
+      await navigator.clipboard.writeText(response.shareResult.shareUrl);
+
+      // Refresh currentArticle
+      currentArticle = await getArticle(currentArticle.id);
+      shareModal.classList.add('hidden');
+      updateShareButtonState();
+
+      // Show brief confirmation
+      showShareToast('Link copied to clipboard!');
+    } else {
+      alert(response?.error || 'Failed to share article');
+    }
+  } catch (err) {
+    alert(`Share failed: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    btn.removeAttribute('disabled');
+    btn.textContent = '📤 Share';
+  }
+}
+
+async function handleUnshare() {
+  if (!currentArticle?.shareShortCode) return;
+  if (!confirm('Unshare this article? The public link will stop working.')) return;
+
+  try {
+    await chrome.runtime.sendMessage({
+      type: 'UNSHARE_ARTICLE',
+      payload: { articleId: currentArticle.id },
+    });
+
+    await updateArticleShareStatus(currentArticle.id, null);
+    currentArticle = await getArticle(currentArticle.id);
+    shareModal.classList.add('hidden');
+    updateShareButtonState();
+    showShareToast('Article unshared');
+  } catch (err) {
+    alert(`Unshare failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+function updateShareButtonState() {
+  if (currentArticle?.sharedUrl) {
+    btnShare.classList.add('active');
+    btnShare.title = 'Shared — click to manage';
+  } else {
+    btnShare.classList.remove('active');
+    btnShare.title = 'Share article';
+  }
+}
+
+function showShareToast(message: string) {
+  // Create a temporary toast
+  const toast = document.createElement('div');
+  toast.className = 'share-toast';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('show'));
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
+function escapeAttr(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function handleDeletePrompt() {
@@ -743,6 +903,14 @@ function setupEventListeners() {
   btnNewTab.addEventListener('click', handleNewTab);
   btnDelete.addEventListener('click', handleDeletePrompt);
   btnRespin.addEventListener('click', openRespinModal);
+  btnShare.addEventListener('click', handleShareClick);
+
+  // Share modal
+  cancelShareBtn.addEventListener('click', () => shareModal.classList.add('hidden'));
+  confirmShareBtn.addEventListener('click', handleShareConfirm);
+  shareModal.addEventListener('click', e => {
+    if (e.target === shareModal) shareModal.classList.add('hidden');
+  });
 
   // Delete modal
   cancelDeleteBtn.addEventListener('click', () => deleteModal.classList.add('hidden'));

@@ -3,7 +3,7 @@
  * Displays saved articles from IndexedDB with respin capability
  */
 
-import { getArticle, toggleFavorite, deleteArticle, exportArticleToFile, SavedArticle } from '../shared/storage-service';
+import { getArticle, toggleFavorite, deleteArticle, exportArticleToFile, updateArticleShareStatus, SavedArticle } from '../shared/storage-service';
 import { BUILT_IN_RECIPES } from '../shared/recipes';
 
 // Get article ID from URL
@@ -19,6 +19,7 @@ const contentFrame = document.getElementById('contentFrame') as HTMLIFrameElemen
 const favoriteBtn = document.getElementById('favoriteBtn')!;
 const favoriteIcon = document.getElementById('favoriteIcon')!;
 const exportBtn = document.getElementById('exportBtn')!;
+const shareBtn = document.getElementById('shareBtn')!;
 const originalBtn = document.getElementById('originalBtn')!;
 const deleteBtn = document.getElementById('deleteBtn')!;
 const respinBtn = document.getElementById('respinBtn')!;
@@ -73,6 +74,9 @@ async function init() {
 
     // Set up event listeners
     setupEventListeners();
+
+    // Update share button state
+    updateViewerShareBtn();
 
   } catch (error) {
     console.error('[Viewer] Failed to load article:', error);
@@ -139,6 +143,68 @@ function setupEventListeners() {
     } catch (error) {
       console.error('[Viewer] Failed to export:', error);
       alert('Failed to export article');
+    }
+  });
+
+  // Share article
+  shareBtn.addEventListener('click', async () => {
+    if (!currentArticle) return;
+
+    if (currentArticle.sharedUrl) {
+      // Already shared — copy link or unshare
+      const action = confirm(
+        `This article is shared at:\n${currentArticle.sharedUrl}\n\nClick OK to copy the link, or Cancel to unshare.`
+      );
+      if (action) {
+        await navigator.clipboard.writeText(currentArticle.sharedUrl);
+        shareBtn.textContent = '✓ Copied';
+        setTimeout(() => updateViewerShareBtn(), 2000);
+      } else {
+        if (confirm('Unshare this article? The public link will stop working.')) {
+          try {
+            await chrome.runtime.sendMessage({
+              type: 'UNSHARE_ARTICLE',
+              payload: { articleId: currentArticle.id },
+            });
+            await updateArticleShareStatus(currentArticle.id, null);
+            currentArticle = await getArticle(currentArticle.id);
+            updateViewerShareBtn();
+          } catch (err) {
+            alert(`Unshare failed: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+      }
+    } else {
+      // Not shared — share it
+      shareBtn.setAttribute('disabled', '');
+      shareBtn.textContent = 'Sharing…';
+      try {
+        const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days default
+        const response = await chrome.runtime.sendMessage({
+          type: 'SHARE_ARTICLE',
+          payload: { articleId: currentArticle.id, expiresAt },
+        });
+        if (response?.success && response.shareResult) {
+          await updateArticleShareStatus(currentArticle.id, {
+            sharedUrl: response.shareResult.shareUrl,
+            sharedBlobUrl: response.shareResult.blobUrl,
+            shareShortCode: response.shareResult.shortCode,
+            sharedAt: Date.now(),
+            shareExpiresAt: expiresAt,
+          });
+          await navigator.clipboard.writeText(response.shareResult.shareUrl);
+          currentArticle = await getArticle(currentArticle.id);
+          updateViewerShareBtn();
+          alert('Link copied to clipboard!');
+        } else {
+          alert(response?.error || 'Failed to share article');
+        }
+      } catch (err) {
+        alert(`Share failed: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        shareBtn.removeAttribute('disabled');
+        updateViewerShareBtn();
+      }
     }
   });
 
@@ -281,6 +347,19 @@ async function performRespin() {
     alert(`Respin failed: ${error}`);
     confirmRespinBtn.removeAttribute('disabled');
     confirmRespinBtn.textContent = '✨ Respin';
+  }
+}
+
+/**
+ * Update the share button text/state in the viewer toolbar
+ */
+function updateViewerShareBtn() {
+  if (currentArticle?.sharedUrl) {
+    shareBtn.textContent = '🔗 Shared';
+    shareBtn.title = 'Click to copy link or unshare';
+  } else {
+    shareBtn.textContent = '📤 Share';
+    shareBtn.title = 'Share article';
   }
 }
 

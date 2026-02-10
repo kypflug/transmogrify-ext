@@ -36,6 +36,7 @@ import {
 import { queueForCloud, isCloudQueueConfiguredAsync } from '../shared/cloud-queue-service';
 import { uploadSettings, downloadSettings } from '../shared/onedrive-service';
 import { getEncryptedEnvelopeForSync, importEncryptedEnvelope, invalidateCache as invalidateSettingsCache } from '../shared/settings-service';
+import { shareArticle, unshareArticle } from '../shared/blob-storage-service';
 
 // In-memory storage for AbortControllers (per request)
 const abortControllers = new Map<string, AbortController>();
@@ -752,6 +753,47 @@ async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
         invalidateSettingsCache();
         return { success: true };
       } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    }
+
+    case 'SHARE_ARTICLE': {
+      try {
+        const articleId = message.payload?.articleId;
+        if (!articleId) return { success: false, error: 'Missing articleId' };
+
+        const article = await getArticle(articleId);
+        if (!article) return { success: false, error: 'Article not found' };
+
+        const result = await shareArticle(
+          article.id,
+          article.html,
+          article.title,
+          message.payload?.expiresAt,
+        );
+
+        return {
+          success: true,
+          shareResult: result,
+        };
+      } catch (error) {
+        console.error('[SW] Share failed:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+
+    case 'UNSHARE_ARTICLE': {
+      try {
+        const articleId = message.payload?.articleId;
+        if (!articleId) return { success: false, error: 'Missing articleId' };
+
+        const article = await getArticle(articleId);
+        if (!article) return { success: false, error: 'Article not found' };
+
+        await unshareArticle(article.id, article.shareShortCode || '');
+        return { success: true };
+      } catch (error) {
+        console.error('[SW] Unshare failed:', error);
         return { success: false, error: String(error) };
       }
     }

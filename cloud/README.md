@@ -43,6 +43,43 @@ Queue a URL for transmogrification.
 }
 ```
 
+### `POST /api/share`
+Create a short link for a shared article.
+
+**Request body:**
+```json
+{
+  "blobUrl": "https://myaccount.blob.core.windows.net/articles/article123.html",
+  "title": "My Article",
+  "accessToken": "<user's Microsoft Graph access token>",
+  "expiresAt": 1739232000000
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "shortCode": "a1b2c3d4e5",
+  "shareUrl": "https://transmogrifia.app/shared/a1b2c3d4e5"
+}
+```
+
+### `DELETE /api/share?code=a1b2c3d4e5`
+Remove a shared link. Requires `Authorization: Bearer <token>` header. Only the original creator can delete.
+
+### `GET /api/s/{code}`
+Resolve a short code to the blob URL. Public — no authentication required.
+
+**Response:** `200 OK`
+```json
+{
+  "url": "https://myaccount.blob.core.windows.net/articles/article123.html",
+  "title": "My Article"
+}
+```
+
+Returns `404` for expired or non-existent links.
+
 ### `GET /api/queue?jobId=abc123`
 Check job status (optional — most users just wait for sync).
 
@@ -117,6 +154,8 @@ func azure functionapp publish transmogrifier-api
 | `AzureWebJobsStorage` | Azure Storage connection string (or `UseDevelopmentStorage=true` for local) |
 | `FUNCTIONS_WORKER_RUNTIME` | Must be `node` |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | (Optional) Application Insights connection string for error logging |
+
+> The `sharedlinks` Azure Table is automatically used from the same `AzureWebJobsStorage` account for the URL shortener registry.
 
 > AI provider keys (`AI_PROVIDER`, `*_API_KEY`, etc.) are **not** configured on the server. The extension sends the user's own keys in every request via the `aiConfig` field.
 

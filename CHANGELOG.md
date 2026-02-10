@@ -2,6 +2,18 @@
 
 All notable changes to Transmogrifier will be documented in this file.
 
+## [0.5.3] - 2026-02-10
+
+### Added
+- **Article sharing (BYOS)** — Share transmogrified articles via clean public URLs (`transmogrifia.app/shared/{code}`). Uses Bring Your Own Storage (BYOS) — users configure their own Azure Blob Storage in Settings, mirroring the existing BYOK pattern. Anyone can view shared articles without signing in.
+- **Settings UI: Article Sharing section** — New "🔗 Article Sharing" card in Settings for configuring Azure Blob Storage (account name, container name, SAS token) with setup instructions
+- **Library share button** — Share button in Library article action bar; creates a public link (30-day default expiry), copies to clipboard. Existing shared articles show their link with copy/unshare options via modal.
+- **Viewer share button** — Quick share toggle in the article viewer toolbar
+- **Cloud share registry** — Two new Azure Function endpoints: `POST /api/share` (create/delete short links) and `GET /api/s/{code}` (resolve short codes). Uses Azure Table Storage (`sharedlinks` table) on the existing storage account.
+- **Blob storage service** (`blob-storage-service.ts`) — Orchestrates HTML upload to user's blob container + short link registration. Injects OpenGraph meta tags for social media previews.
+- **Share status on articles** — `SavedArticle` and `OneDriveArticleMeta` now track `sharedUrl`, `sharedBlobUrl`, `shareShortCode`, `sharedAt`, and `shareExpiresAt`
+- **BYOS settings sync** — Sharing configuration (provider, account, container, SAS token) roams via the existing encrypted settings sync to OneDrive
+
 ## [0.5.2] - 2026-02-09
 
 ### Added

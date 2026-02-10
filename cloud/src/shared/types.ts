@@ -50,6 +50,12 @@ export interface OneDriveArticleMeta {
   updatedAt: number;
   isFavorite: boolean;
   size: number;
+  // Sharing fields (optional)
+  sharedUrl?: string;
+  sharedBlobUrl?: string;
+  shareShortCode?: string;
+  sharedAt?: number;
+  shareExpiresAt?: number;
 }
 
 /** Image placeholder from AI response (for image-enabled recipes) */

@@ -196,6 +196,47 @@
 
 
 
+      <!-- Sharing (BYOS) Section -->
+      <section class="settings-section" id="sharingSection">
+        <div class="section-header">
+          <h2>🔗 Article Sharing</h2>
+          <span class="section-badge" id="sharingBadge">Disabled</span>
+        </div>
+        <p class="section-desc">
+          Share articles via public links. Bring Your Own Storage (BYOS) — articles are
+          uploaded to your Azure Blob Storage account. Short links are generated via the cloud API.
+        </p>
+
+        <div class="field-row">
+          <label for="sharingProvider">Storage Provider</label>
+          <select id="sharingProvider">
+            <option value="none">None (disabled)</option>
+            <option value="azure-blob">Azure Blob Storage</option>
+          </select>
+        </div>
+
+        <!-- Azure Blob fields -->
+        <div class="provider-fields hidden" id="sharingAzureBlobFields">
+          <div class="field-row">
+            <label for="sharingAccountName">Account Name</label>
+            <input type="text" id="sharingAccountName" placeholder="mystorageaccount">
+          </div>
+          <div class="field-row">
+            <label for="sharingContainerName">Container Name</label>
+            <input type="text" id="sharingContainerName" placeholder="shared-articles">
+          </div>
+          <div class="field-row">
+            <label for="sharingSasToken">SAS Token</label>
+            <input type="password" id="sharingSasToken" placeholder="sv=2024-11-04&ss=b&srt=co&sp=rwdl…" autocomplete="off">
+          </div>
+          <p class="section-desc" style="margin-top: 0.5rem; font-size: 0.8rem;">
+            Create a storage account → add a container with <strong>Blob</strong> public access level →
+            generate a SAS token (Blob service, Container+Object permissions, Read+Write+Delete, HTTPS only) →
+            add a CORS rule for <code>https://transmogrifia.app</code> (GET method).
+          </p>
+        </div>
+      </section>
+
       <!-- Sync Section -->
       <section class="settings-section" id="syncSection">
         <div class="section-header">

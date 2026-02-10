@@ -67,6 +67,18 @@ export interface CloudSettings {
   apiUrl: string;
 }
 
+/** Sharing storage provider */
+export type SharingProvider = 'none' | 'azure-blob';
+
+/** Per-provider sharing configuration */
+export interface SharingProviderSettings {
+  azureBlob?: {
+    accountName: string;
+    containerName: string;
+    sasToken: string;
+  };
+}
+
 /** Full settings object */
 export interface TransmogrifierSettings {
   /** Schema version for future migrations */
@@ -81,6 +93,10 @@ export interface TransmogrifierSettings {
   image: ImageProviderSettings;
   /** Cloud processing settings */
   cloud: CloudSettings;
+  /** Active sharing storage provider */
+  sharingProvider: SharingProvider;
+  /** Per-provider sharing config */
+  sharing: SharingProviderSettings;
   /** When these settings were last updated (epoch ms) */
   updatedAt: number;
 }
@@ -185,6 +201,8 @@ export function getDefaultSettings(): TransmogrifierSettings {
     cloud: {
       apiUrl: '',
     },
+    sharingProvider: 'none',
+    sharing: {},
     updatedAt: 0,
   };
 }
@@ -382,6 +400,33 @@ export async function getEffectiveImageConfig(): Promise<{
 export async function getEffectiveCloudUrl(): Promise<string> {
   const settings = await loadSettings();
   return settings.cloud.apiUrl || DEFAULT_CLOUD_URL;
+}
+
+/**
+ * Resolve the effective sharing config (BYOS).
+ * Returns null if sharing is disabled or not configured.
+ */
+export async function getEffectiveSharingConfig(): Promise<{
+  provider: SharingProvider;
+  accountName: string;
+  containerName: string;
+  sasToken: string;
+} | null> {
+  const settings = await loadSettings();
+  if (settings.sharingProvider === 'none') return null;
+
+  if (settings.sharingProvider === 'azure-blob') {
+    const c = settings.sharing.azureBlob;
+    if (!c?.accountName || !c?.containerName || !c?.sasToken) return null;
+    return {
+      provider: 'azure-blob',
+      accountName: c.accountName,
+      containerName: c.containerName,
+      sasToken: c.sasToken,
+    };
+  }
+
+  return null;
 }
 
 /**

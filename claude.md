@@ -16,6 +16,7 @@ Transmogrifier is a Microsoft Edge extension (Manifest V3) that transforms web p
 - Content script re-injection after extension reload
 - Keyboard shortcuts for article skimming
 - Optional AI image generation via Azure OpenAI, OpenAI, or Google Gemini
+- Article sharing via public URLs (BYOS — Bring Your Own Storage)
 - Dark mode support (`prefers-color-scheme`)
 
 ## Architecture Overview
@@ -88,6 +89,7 @@ The PWA also uses delta sync, filters `.json` client-side (no `$filter`), and ca
 | `src/shared/crypto-service.ts` | AES-256-GCM encryption (device key + passphrase modes) |
 | `src/shared/device-key.ts` | Per-device non-extractable CryptoKey generation & storage |
 | `src/shared/settings-service.ts` | Settings CRUD, sync passphrase, encrypted sync |
+| `src/shared/blob-storage-service.ts` | BYOS blob upload + short link registration |
 | `src/shared/cloud-queue-service.ts` | Cloud function queue client (always sends user's keys) |
 | `src/shared/storage-service.ts` | IndexedDB article storage (TransmogrifierDB) |
 | `src/shared/auth-service.ts` | Microsoft OAuth2 PKCE authentication |
@@ -349,6 +351,9 @@ POST /api/queue  →  Azure Storage Queue  →  Queue-trigger Function
 | `cloud/src/shared/content-extractor.ts` | Server-side extraction (linkedom + Readability) |
 | `cloud/src/shared/ai-service.ts` | Multi-provider AI calls (no server keys) |
 | `cloud/src/shared/onedrive.ts` | Uploads articles to user's OneDrive |
+| `cloud/src/functions/share.ts` | HTTP trigger: create/delete short links (authenticated) |
+| `cloud/src/functions/resolve.ts` | HTTP trigger: resolve short code to blob URL (public) |
+| `cloud/src/shared/share-registry.ts` | Azure Table Storage backend for URL shortener |
 | `cloud/src/shared/recipes.ts` | Inlined recipe prompts for cloud use |
 
 ### Deployment
@@ -358,6 +363,7 @@ POST /api/queue  →  Azure Storage Queue  →  Queue-trigger Function
 - **Timeout**: 10 minutes (`functionTimeout` in host.json — max for Consumption)
 - **Application Insights**: `transmogrifier-insights` for error visibility
 - **CORS**: Restricted to `https://transmogrifia.app` (extensions bypass CORS)
+- **URL Shortener**: Azure Table Storage (`sharedlinks` table on same storage account) for `transmogrifia.app/shared/{code}` short links
 - **Default cloud URL**: Hardcoded in `settings-service.ts` as `DEFAULT_CLOUD_URL`
 
 ### linkedom Caveat
@@ -376,6 +382,7 @@ linkedom's `parseHTML()` places HTML fragments in `documentElement`, not `body`.
 - OAuth2 PKCE flow (no client secret required)
 - OneDrive AppData folder is app-private
 - Encrypted settings optionally synced to OneDrive (`settings.enc.json`) — only decryptable with the user's passphrase
+- **BYOS sharing**: Users provide their own Azure Blob Storage credentials for article sharing — no server-side storage costs for shared articles. Short link registry uses Azure Table Storage on the existing Functions storage account (negligible cost).
 
 ## Testing Checklist
 - [ ] Test recipes on news sites, blogs, documentation
@@ -395,6 +402,9 @@ linkedom's `parseHTML()` places HTML fragments in `documentElement`, not `body`.
 - [ ] Test sync push (save, delete, favorite)
 - [ ] Test sync pull (periodic and manual)
 - [ ] Test sync conflict resolution
+- [ ] Test article sharing (share, copy link, unshare)
+- [ ] Test shared article viewer at transmogrifia.app/shared/{code}
+- [ ] Test share link expiry
 - [ ] Test cloud transmogrification (queue job, verify article appears in OneDrive)
 - [ ] Test active remix tracking in popup (progress, error display, dismiss)
 - [ ] Test cloud-queued active remixes in popup

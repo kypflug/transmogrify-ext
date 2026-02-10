@@ -17,6 +17,7 @@ Supports **multiple AI providers** out of the box — Azure OpenAI, OpenAI, Anth
 - **Library**: Full two-pane article browser with search, filtering, sorting, and inline reading
 - **Saved Articles**: IndexedDB storage for unlimited article saving
 - **OneDrive Sync**: Sign in with a Microsoft account to sync articles across devices via OneDrive AppData
+- **Article Sharing**: Share articles via public URLs (`transmogrifia.app/shared/{code}`) — BYOS (Bring Your Own Storage) with Azure Blob Storage
 - **Respin**: Re-transform saved articles with different recipes
 - **Parallel Jobs**: Run multiple jobs simultaneously with independent progress tracking
 - **Live Library Updates**: Library auto-refreshes when articles are added, deleted, or synced
@@ -88,6 +89,7 @@ Click "Library" in the popup to open the full Library view. The Library provides
 - Floating shortcut legend in the bottom-right corner
 - In-progress remixes shown at the top of the sidebar with live status and cancel button
 - Sync status bar with sign-in and manual sync
+- Share articles: Share button creates a public URL; manage existing links with copy/unshare
 
 ### Parallel Jobs
 You can start multiple jobs on different tabs simultaneously. Active jobs appear in the popup and the Library sidebar with live progress and cancel buttons.
@@ -141,6 +143,7 @@ src/
     +-- crypto-service.ts     # AES-256-GCM encryption (device key + passphrase modes)
     +-- device-key.ts         # Per-device non-extractable CryptoKey (IndexedDB)
     +-- settings-service.ts   # Settings CRUD, sync passphrase, encrypted sync
+    +-- blob-storage-service.ts # BYOS blob upload + short link registration
     +-- cloud-queue-service.ts # Cloud function queue client (BYOK)
     +-- storage-service.ts    # IndexedDB article storage
     +-- auth-service.ts       # Microsoft OAuth2 PKCE

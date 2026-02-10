@@ -65,7 +65,9 @@ export interface RemixMessage {
     | 'SYNC_DOWNLOAD_ARTICLE'
     | 'CLOUD_QUEUE'
     | 'SETTINGS_PUSH'
-    | 'SETTINGS_PULL';
+    | 'SETTINGS_PULL'
+    | 'SHARE_ARTICLE'
+    | 'UNSHARE_ARTICLE';
   payload?: RemixPayload;
 }
 
@@ -89,6 +91,7 @@ export interface RemixPayload {
   articleId?: string; // For article operations
   requestId?: string; // For parallel remix tracking
   url?: string; // For cloud queue (URL to transmogrify)
+  expiresAt?: number; // For share expiration (epoch ms)
 }
 
 /** Response from content script */
@@ -121,6 +124,12 @@ export interface RemixResponse {
   cloudQueue?: {
     jobId: string;
     message: string;
+  };
+  // Share fields
+  shareResult?: {
+    shareUrl: string;
+    blobUrl: string;
+    shortCode: string;
   };
 }
 

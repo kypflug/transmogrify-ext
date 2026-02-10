@@ -21,6 +21,12 @@ export interface SavedArticle {
   updatedAt: number;
   isFavorite: boolean;
   size: number; // HTML size in bytes
+  // Sharing fields (optional — set when article is shared publicly)
+  sharedUrl?: string;      // Branded transmogrifia.app/shared/{code} URL
+  sharedBlobUrl?: string;  // Raw blob storage URL (for deletion)
+  shareShortCode?: string; // Short code (for unsharing via cloud API)
+  sharedAt?: number;       // When the article was shared (epoch ms)
+  shareExpiresAt?: number; // Optional expiration (epoch ms)
 }
 
 export interface ArticleSummary {
@@ -351,6 +357,50 @@ export async function upsertArticle(article: SavedArticle): Promise<SavedArticle
     const store = tx.objectStore(STORE_NAME);
     store.put(article);
     tx.oncomplete = () => resolve(article);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/**
+ * Update article share status.
+ * Sets or clears the sharing fields without modifying other article data.
+ */
+export async function updateArticleShareStatus(
+  id: string,
+  shareData: {
+    sharedUrl?: string;
+    sharedBlobUrl?: string;
+    shareShortCode?: string;
+    sharedAt?: number;
+    shareExpiresAt?: number;
+  } | null,
+): Promise<void> {
+  const article = await getArticle(id);
+  if (!article) throw new Error('Article not found');
+
+  if (shareData) {
+    article.sharedUrl = shareData.sharedUrl;
+    article.sharedBlobUrl = shareData.sharedBlobUrl;
+    article.shareShortCode = shareData.shareShortCode;
+    article.sharedAt = shareData.sharedAt;
+    article.shareExpiresAt = shareData.shareExpiresAt;
+  } else {
+    // Clear share fields
+    delete article.sharedUrl;
+    delete article.sharedBlobUrl;
+    delete article.shareShortCode;
+    delete article.sharedAt;
+    delete article.shareExpiresAt;
+  }
+
+  article.updatedAt = Date.now();
+
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([STORE_NAME], 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    store.put(article);
+    tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
 }

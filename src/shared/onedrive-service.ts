@@ -25,6 +25,12 @@ export interface OneDriveArticleMeta {
   updatedAt: number;
   isFavorite: boolean;
   size: number;
+  // Sharing fields (optional)
+  sharedUrl?: string;
+  sharedBlobUrl?: string;
+  shareShortCode?: string;
+  sharedAt?: number;
+  shareExpiresAt?: number;
 }
 
 export interface DeltaResult {

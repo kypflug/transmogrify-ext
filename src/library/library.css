@@ -964,3 +964,60 @@ body {
     display: none;
   }
 }
+
+/* Share UI */
+.share-url-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.share-url-input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--edge-border);
+  border-radius: var(--edge-radius);
+  background: var(--edge-surface-sunken);
+  color: var(--edge-text-primary);
+  font-family: var(--lib-font);
+  font-size: 12px;
+}
+
+.share-url-row .btn {
+  padding: 6px 10px;
+  flex-shrink: 0;
+}
+
+.share-expires {
+  font-size: 12px;
+  color: var(--edge-text-secondary);
+  margin-top: 6px;
+}
+
+.share-toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--edge-blue);
+  color: white;
+  padding: 10px 20px;
+  border-radius: var(--edge-radius);
+  font-family: var(--lib-font);
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0;
+  transition: opacity 0.3s, transform 0.3s;
+  z-index: 10000;
+  pointer-events: none;
+}
+
+.share-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.action-btn.active {
+  color: var(--edge-blue);
+}

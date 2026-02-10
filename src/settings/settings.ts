@@ -14,6 +14,7 @@ import {
   clearSettings,
   invalidateCache,
   type TransmogrifierSettings,
+  type SharingProvider,
 } from '../shared/settings-service';
 import { isSignedIn } from '../shared/auth-service';
 
@@ -47,6 +48,13 @@ const imgFieldGroups: Record<string, HTMLElement> = {
   'azure-openai': document.getElementById('imgAzureFields')!,
   'openai': document.getElementById('imgOpenaiFields')!,
   'google': document.getElementById('imgGoogleFields')!,
+};
+
+// Sharing Provider
+const sharingProviderSelect = document.getElementById('sharingProvider') as HTMLSelectElement;
+const sharingBadge = document.getElementById('sharingBadge')!;
+const sharingFieldGroups: Record<string, HTMLElement> = {
+  'azure-blob': document.getElementById('sharingAzureBlobFields')!,
 };
 
 // Sync
@@ -148,6 +156,18 @@ function populateForm(settings: TransmogrifierSettings) {
     (document.getElementById('imgGoogleKey') as HTMLInputElement).value = googleImg.apiKey || '';
     (document.getElementById('imgGoogleModel') as HTMLInputElement).value = googleImg.model || '';
   }
+
+  // Sharing Provider
+  sharingProviderSelect.value = settings.sharingProvider || 'none';
+  showProviderFields(sharingFieldGroups, settings.sharingProvider || 'none');
+
+  // Azure Blob sharing
+  const azureBlob = settings.sharing?.azureBlob;
+  if (azureBlob) {
+    (document.getElementById('sharingAccountName') as HTMLInputElement).value = azureBlob.accountName || '';
+    (document.getElementById('sharingContainerName') as HTMLInputElement).value = azureBlob.containerName || '';
+    (document.getElementById('sharingSasToken') as HTMLInputElement).value = azureBlob.sasToken || '';
+  }
 }
 
 // ─── Form Reading ────────────────
@@ -210,6 +230,16 @@ function readFormToSettings(): TransmogrifierSettings {
     apiUrl: '',
   };
 
+  // Sharing Provider
+  settings.sharingProvider = sharingProviderSelect.value as SharingProvider;
+  if (!settings.sharing) settings.sharing = {};
+
+  settings.sharing.azureBlob = {
+    accountName: val('sharingAccountName'),
+    containerName: val('sharingContainerName'),
+    sasToken: val('sharingSasToken'),
+  };
+
   return settings;
 }
 
@@ -264,6 +294,12 @@ function setupEventListeners() {
   // Image Provider switching
   imageProviderSelect.addEventListener('change', () => {
     showProviderFields(imgFieldGroups, imageProviderSelect.value);
+    scheduleAutoSave();
+  });
+
+  // Sharing Provider switching
+  sharingProviderSelect.addEventListener('change', () => {
+    showProviderFields(sharingFieldGroups, sharingProviderSelect.value);
     scheduleAutoSave();
   });
 
@@ -468,6 +504,22 @@ function updateBadges() {
     } else {
       imageBadge.textContent = 'Not configured';
       imageBadge.classList.remove('configured');
+    }
+  }
+
+  // Sharing badge
+  const sharingProvider = currentSettings.sharingProvider;
+  if (sharingProvider === 'none' || !sharingProvider) {
+    sharingBadge.textContent = 'Disabled';
+    sharingBadge.classList.remove('configured');
+  } else {
+    const sharingKey = currentSettings.sharing?.azureBlob?.sasToken || '';
+    if (sharingKey) {
+      sharingBadge.textContent = 'Azure Blob';
+      sharingBadge.classList.add('configured');
+    } else {
+      sharingBadge.textContent = 'Not configured';
+      sharingBadge.classList.remove('configured');
     }
   }
 
