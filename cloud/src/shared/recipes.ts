@@ -123,7 +123,8 @@ HTML REQUIREMENTS:
 - Include a viewport meta tag: <meta name="viewport" content="width=device-width, initial-scale=1">
 - PHONE VIEWPORT SUPPORT (CRITICAL): The page MUST look correct on phone screens as narrow as 375px (iPhone SE). Test every layout decision against a 375px viewport. Key rules:
   - Use fluid typography with clamp() — no font sizes that overflow at 375px
-  - All containers: max-width: 100vw; box-sizing: border-box; overflow-wrap: break-word
+  - GLOBAL RESET (add this to every page): *, *::before, *::after { box-sizing: border-box; min-width: 0; } — the min-width:0 is ESSENTIAL to prevent flex/grid children from refusing to shrink, which is the #1 cause of long-string overflow in complex layouts
+  - All containers: overflow-wrap: break-word; word-break: break-word — ensures long URLs, technical terms, and unbreakable strings wrap inside ANY container, including nested flex/grid children
   - No horizontal scrollbar — ever. No element may exceed viewport width
   - Grids/multi-column layouts must collapse to single column at narrow widths
   - Padding/margins: scale down on small screens (use clamp() or @media max-width: 480px)
@@ -213,7 +214,8 @@ HTML REQUIREMENTS:
 - Include a viewport meta tag: <meta name="viewport" content="width=device-width, initial-scale=1">
 - PHONE VIEWPORT SUPPORT (CRITICAL): The page MUST look correct on phone screens as narrow as 375px (iPhone SE). Key rules:
   - Use fluid typography with clamp() — no font sizes that overflow at 375px
-  - All containers: max-width: 100vw; box-sizing: border-box; overflow-wrap: break-word
+  - GLOBAL RESET (add this to every page): *, *::before, *::after { box-sizing: border-box; min-width: 0; } — the min-width:0 is ESSENTIAL to prevent flex/grid children from refusing to shrink, which is the #1 cause of long-string overflow in complex layouts
+  - All containers: overflow-wrap: break-word; word-break: break-word — ensures long URLs, technical terms, and unbreakable strings wrap inside ANY container, including nested flex/grid children
   - No horizontal scrollbar — ever. No element may exceed viewport width
   - Grids/multi-column layouts must collapse to single column at narrow widths
   - Padding/margins: scale down on small screens (use clamp() or @media max-width: 480px)
@@ -423,7 +425,8 @@ RESPONSIVE DESIGN (CRITICAL — must work down to 375px / iPhone SE):
 - Use fluid typography with clamp() for headings: e.g. clamp(1.8rem, 5vw, 5rem)
 - Grid layouts must collapse gracefully: use auto-fit/auto-fill with minmax(), or switch to single-column below 768px
 - Overlapping elements must reflow on small screens — no content hidden behind other content
-- All containers must use overflow-wrap:break-word and max-width:100vw to prevent horizontal scroll
+- All containers must use overflow-wrap:break-word; word-break:break-word and max-width:100vw to prevent horizontal scroll
+- Apply min-width:0 to ALL flex/grid children — without this, long strings (URLs, code, technical terms) in nested flex/grid layouts WILL overflow even with overflow-wrap set. Use the global reset: *, *::before, *::after { min-width: 0; }
 - Images: max-width:100%; height:auto — never let images overflow their container
 - Test mentally at 375px (iPhone SE), 768px, and 1200px — the design MUST work at all three
 - On mobile (max-width: 480px): collapse multi-column grids to single column, reduce dramatic whitespace, scale down oversized type, reduce padding to 16px or less
@@ -535,9 +538,9 @@ RESPONSIVE DESIGN (CRITICAL — must work down to 375px / iPhone SE):
 - Grid layouts: use auto-fit/auto-fill with minmax(min(100%, 280px), 1fr) so columns collapse on narrow screens
 - Sidenotes/margin notes: on screens below 900px, inline them as styled callout blocks within the main flow
 - Comparison tables: use overflow-x:auto on a wrapper so tables scroll horizontally rather than breaking the layout
-- All containers: max-width:100vw, box-sizing:border-box — no horizontal scrollbar ever
+- All containers: max-width:100vw, box-sizing:border-box, overflow-wrap:break-word, word-break:break-word — no horizontal scrollbar ever
 - On mobile (max-width: 480px): single-column layout, full-width panels, reduce padding to 12-16px
-- Data panels and callout boxes must use min-width:0 inside grid/flex to allow shrinking
+- ALL flex/grid children must use min-width:0 to allow text to shrink and wrap — without this, long strings (URLs, code, technical terms) in grid cells, callout boxes, sidenotes, and data panels WILL overflow their containers. Use the global reset: *, *::before, *::after { min-width: 0; }
 - Test at 375px width — every grid, table, and panel must remain usable without horizontal scroll
 - iOS Safari: avoid 100vh (use min-height: 100dvh or omit), avoid background-attachment: fixed on mobile (causes repaint/jank), ensure all tap targets are at least 44×44px
 
