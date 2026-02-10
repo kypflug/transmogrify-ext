@@ -453,8 +453,13 @@ async function selectArticle(id: string) {
     btnFavorite.classList.toggle('active', article.isFavorite);
 
     // Render content in iframe (hide the save FAB — redundant with header save button)
+    // Fix any leftover double-escaped Unicode sequences from older AI generations
+    const cleanHtml = article.html.replace(
+      /\\u([0-9a-fA-F]{4})/g,
+      (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)),
+    );
     const fabHideStyle = '<style>.remix-save-fab { display: none !important; }</style>';
-    contentFrame.srcdoc = article.html.replace('</head>', fabHideStyle + '</head>');
+    contentFrame.srcdoc = cleanHtml.replace('</head>', fabHideStyle + '</head>');
     contentFrame.addEventListener('load', () => {
       fixAnchorLinks();
       forwardIframeKeyboard();

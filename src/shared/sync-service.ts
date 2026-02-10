@@ -367,19 +367,25 @@ async function saveOrUpdateArticle(
 ): Promise<SavedArticle> {
   const existing = await getArticle(meta.id);
 
+  // Fix double-escaped Unicode sequences from older AI generations (e.g. literal \u2192 → →)
+  const cleanHtml = html.replace(
+    /\\u([0-9a-fA-F]{4})/g,
+    (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)),
+  );
+
   const article: SavedArticle = {
     id: meta.id,
     title: meta.title,
     originalUrl: meta.originalUrl,
     recipeId: meta.recipeId,
     recipeName: meta.recipeName,
-    html,
+    html: cleanHtml,
     originalContent: existing?.originalContent,
     thumbnail: existing?.thumbnail,
     createdAt: meta.createdAt,
     updatedAt: meta.updatedAt,
     isFavorite: meta.isFavorite,
-    size: meta.size,
+    size: new Blob([cleanHtml]).size,
   };
 
   return upsertArticle(article);

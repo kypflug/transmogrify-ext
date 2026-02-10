@@ -17,7 +17,8 @@ import {
   deleteArticle, 
   toggleFavorite, 
   exportArticleToFile,
-  getStorageStats
+  getStorageStats,
+  migrateFixUnicodeEscapes
 } from '../shared/storage-service';
 import { signIn, signOut, isSignedIn, getUserInfo } from '../shared/auth-service';
 import {
@@ -363,6 +364,11 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 
   // Set up periodic sync alarm
   setupSyncAlarm();
+
+  // One-time data migrations
+  migrateFixUnicodeEscapes().catch(err =>
+    console.error('[Transmogrifier] Unicode-escape migration failed:', err)
+  );
 
   // Restore viewer tabs that were killed by extension reload/update
   if (details.reason === 'update') {

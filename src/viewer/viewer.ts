@@ -55,7 +55,12 @@ async function init() {
     favoriteIcon.textContent = currentArticle.isFavorite ? '★' : '☆';
 
     // Load content into iframe using srcdoc
-    contentFrame.srcdoc = currentArticle.html;
+    // Fix any leftover double-escaped Unicode sequences from older AI generations
+    const cleanHtml = currentArticle.html.replace(
+      /\\u([0-9a-fA-F]{4})/g,
+      (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)),
+    );
+    contentFrame.srcdoc = cleanHtml;
     
     // Fix anchor links after iframe loads
     contentFrame.addEventListener('load', () => {

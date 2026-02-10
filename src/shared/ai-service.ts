@@ -460,10 +460,12 @@ function parseAIResponse(content: string): AIResponse {
     // Extract HTML - it should be a string
     if (typeof parsed.html === 'string') {
       // Fix any literal \n sequences that should be actual newlines
+      // (AI sometimes double-escapes when producing JSON)
       response.html = parsed.html
         .replace(/\\n/g, '\n')
         .replace(/\\t/g, '\t')
-        .replace(/\\"/g, '"');
+        .replace(/\\"/g, '"')
+        .replace(/\\u([0-9a-fA-F]{4})/g, (_: string, hex: string) => String.fromCodePoint(parseInt(hex, 16)));
     } else {
       console.error('[Transmogrifier] HTML field is not a string:', typeof parsed.html);
     }

@@ -206,7 +206,8 @@ function parseAIResponse(raw: string): AIResponse {
       const html = parsed.html
         .replace(/\\n/g, '\n')
         .replace(/\\t/g, '\t')
-        .replace(/\\"/g, '"');
+        .replace(/\\"/g, '"')
+        .replace(/\\u([0-9a-fA-F]{4})/g, (_: string, hex: string) => String.fromCodePoint(parseInt(hex, 16)));
       const result: AIResponse = { html, explanation: parsed.explanation };
       if (Array.isArray(parsed.images)) {
         result.images = parseImagePlaceholders(parsed.images);
@@ -226,7 +227,8 @@ function parseAIResponse(raw: string): AIResponse {
         const html = parsed.html
           .replace(/\\n/g, '\n')
           .replace(/\\t/g, '\t')
-          .replace(/\\"/g, '"');
+          .replace(/\\"/g, '"')
+          .replace(/\\u([0-9a-fA-F]{4})/g, (_: string, hex: string) => String.fromCodePoint(parseInt(hex, 16)));
         const result: AIResponse = { html, explanation: parsed.explanation };
         if (Array.isArray(parsed.images)) {
           result.images = parseImagePlaceholders(parsed.images);

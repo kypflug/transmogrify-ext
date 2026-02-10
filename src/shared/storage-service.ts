@@ -389,6 +389,50 @@ export async function clearAllArticles(): Promise<void> {
 }
 
 /**
+ * One-time migration: fix double-escaped Unicode sequences (e.g. literal \u2192)
+ * left behind by AI in previously generated articles.
+ */
+export async function migrateFixUnicodeEscapes(): Promise<number> {
+  const MIGRATION_KEY = 'migration_unicode_escapes_done';
+  const check = await chrome.storage.local.get(MIGRATION_KEY);
+  if (check[MIGRATION_KEY]) return 0;
+
+  const db = await getDB();
+
+  const articles: SavedArticle[] = await new Promise((resolve, reject) => {
+    const tx = db.transaction([STORE_NAME], 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+
+  const toFix = articles.filter(a => /\\u[0-9a-fA-F]{4}/.test(a.html));
+
+  if (toFix.length > 0) {
+    const tx = db.transaction([STORE_NAME], 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    for (const article of toFix) {
+      article.html = article.html.replace(
+        /\\u([0-9a-fA-F]{4})/g,
+        (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)),
+      );
+      article.size = new Blob([article.html]).size;
+      article.updatedAt = Date.now();
+      store.put(article);
+    }
+    await new Promise<void>((res, rej) => {
+      tx.oncomplete = () => res();
+      tx.onerror = () => rej(tx.error);
+    });
+    console.log(`[Storage] Unicode-escape migration: fixed ${toFix.length} article(s)`);
+  }
+
+  await chrome.storage.local.set({ [MIGRATION_KEY]: true });
+  return toFix.length;
+}
+
+/**
  * Export article as downloadable HTML file
  */
 export async function exportArticleToFile(id: string): Promise<void> {
