@@ -2,6 +2,49 @@
 
 All notable changes to Transmogrifier will be documented in this file.
 
+## [0.5.1] - 2026-02-09
+
+### Added
+- **Cloud function deployed** — Azure Functions backend live at `https://transmogrifier-api.azurewebsites.net` (westus2, Node 20, Linux Consumption Plan)
+- **Application Insights** — `transmogrifier-insights` connected to the function app for error visibility and log streaming
+- **Active remix tracking in popup** — Cloud-queued and local jobs shown in popup with live status, error display, and dismiss/cancel buttons
+- **Error persistence** — Errored jobs stay visible in popup until the user dismisses them (no auto-cleanup)
+- **Default cloud URL** — `settings-service.ts` now hardcodes `https://transmogrifier-api.azurewebsites.net` as the default cloud endpoint; no manual configuration needed
+
+### Fixed
+- **Content extraction bug (cloud)** — linkedom's `parseHTML()` places HTML fragments in `documentElement`, not `body`. `htmlToStructuredText()` now falls back to `documentElement` when `body` has no children. Previously, articles extracted server-side had zero body content (only title/author metadata).
+- **`new Blob()` → `Buffer.byteLength()`** — Replaced browser-only `Blob` constructor in `process.ts` with Node-native `Buffer.byteLength()` for article size calculation
+
+### Changed
+- **Function timeout** — `host.json` now sets `functionTimeout` to 10 minutes (Consumption plan max), up from the 5-minute default. AI generation with large articles can exceed 5 minutes.
+- **CORS tightened** — Cloud function CORS restricted from `*` to `https://transmogrifia.app` only (extensions bypass CORS)
+- **Cloud Processing settings removed** — Removed redundant Cloud Processing section from Settings UI; cloud URL uses the hardcoded default
+
+## [0.5.0] - 2026-02-09
+
+### Added
+- **Settings UI** — In-extension settings page (`src/settings/`) for configuring API keys, providers, cloud endpoint, and sync passphrase. Accessible via the popup gear icon or extension context menu.
+- **Two-tier encrypted key storage** — Local settings encrypted with a per-device AES-256-GCM key (non-extractable `CryptoKey` stored in IndexedDB). No passphrase needed for day-to-day use. For OneDrive sync, a separate user passphrase encrypts settings with PBKDF2 (600,000 iterations per OWASP 2023).
+- **Settings sync** — Encrypted settings sync to OneDrive at `/drive/special/approot/settings.enc.json` for cross-device key portability. Enter the same passphrase on a new device to decrypt and import.
+- `device-key.ts` — Per-device non-extractable CryptoKey generation and storage in IndexedDB (`TransmogrifierKeyStore`)
+- `crypto-service.ts` — AES-256-GCM encrypt/decrypt with two modes: device key (local) and passphrase/PBKDF2 (cloud sync)
+- `settings-service.ts` — Settings CRUD, passphrase management, config resolution, encrypted sync helpers
+- `cloud-queue-service.ts` — Cloud function queue client with BYOK (always sends user's keys)
+
+### Changed
+- **BYOK-only architecture** — All API keys are now user-supplied via the Settings UI. No build-time secrets, no `.env` API keys, no server-side AI keys. The cloud function receives AI credentials from the caller in every request.
+- **`config.ts` rewritten** — Removed all `import.meta.env` references and `buildAIConfig()`/`buildImageConfig()` functions. Provider config now resolved at runtime from encrypted settings via `resolveAIConfig()`, `resolveImageConfig()`, `resolveCloudUrl()`.
+- **Cloud function keyless** — Removed `getConfig()` server-side fallback from cloud `ai-service.ts`. `aiConfig` is now required on `TransmogrifyJob` and `QueueRequest` types; `queue.ts` returns 400 if missing.
+- **`.env` stripped** — Extension `.env` and `.env.example` contain no secrets; `vite-env.d.ts` stripped to Vite reference only.
+- **Documentation updated** — README.md, claude.md, cloud/README.md, and copilot-instructions.md all updated to reflect BYOK architecture and Settings UI.
+
+### Security
+- API keys never appear in source code, build output, or server-side configuration
+- Local settings encrypted with non-extractable device key (AES-256-GCM) — persists across sessions, no user input needed
+- Cloud sync uses separate passphrase encryption (PBKDF2, 600k iterations) — passphrase held in memory only
+- 12-byte random IV generated fresh per encryption operation
+- Zero `import.meta.env` references in codebase — verified via grep
+
 ## [0.4.6] - 2026-02-08
 
 ### Added

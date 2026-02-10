@@ -4,7 +4,7 @@
  * and Google Gemini (gemini-2.5-flash-image / gemini-3-pro-image-preview)
  */
 
-import { imageConfig, isImageConfigured, AzureImageConfig, OpenAIImageConfig, GoogleImageConfig } from './config';
+import { resolveImageConfig, AzureImageConfig, OpenAIImageConfig, GoogleImageConfig, ImageConfig } from './config';
 
 export interface ImageGenerationRequest {
   prompt: string;
@@ -33,11 +33,18 @@ export interface ImageGenerationResponse {
 export async function generateImages(
   requests: ImageGenerationRequest[]
 ): Promise<ImageGenerationResponse> {
-  if (!isImageConfigured()) {
+  // Resolve effective image config from user settings
+  const effectiveConfig = await resolveImageConfig();
+
+  const configured = effectiveConfig.provider === 'azure-openai'
+    ? !!((effectiveConfig as AzureImageConfig).endpoint && effectiveConfig.apiKey)
+    : effectiveConfig.provider !== 'none' && !!(effectiveConfig as OpenAIImageConfig | GoogleImageConfig).apiKey;
+
+  if (!configured) {
     return {
       success: false,
       images: [],
-      error: 'Image generation is not configured. Set VITE_IMAGE_PROVIDER and the matching API key in .env',
+      error: 'Image generation is not configured. Set up an image provider in Settings (⚙️).',
     };
   }
 
@@ -46,7 +53,7 @@ export async function generateImages(
   // Process images sequentially to avoid rate limits
   for (let i = 0; i < requests.length; i++) {
     const request = requests[i];
-    const result = await generateSingleImage(request, `img-${i}`);
+    const result = await generateSingleImageWithConfig(effectiveConfig, request, `img-${i}`);
     results.push(result);
 
     // Small delay between requests to be nice to the API
@@ -64,19 +71,20 @@ export async function generateImages(
 }
 
 /**
- * Generate a single image via the active provider
+ * Generate a single image via the active provider (using resolved config)
  */
-async function generateSingleImage(
+async function generateSingleImageWithConfig(
+  config: ImageConfig,
   request: ImageGenerationRequest,
   id: string
 ): Promise<GeneratedImage> {
-  switch (imageConfig.provider) {
+  switch (config.provider) {
     case 'azure-openai':
-      return generateAzureImage(imageConfig, request, id);
+      return generateAzureImage(config, request, id);
     case 'openai':
-      return generateOpenAIImage(imageConfig, request, id);
+      return generateOpenAIImage(config, request, id);
     case 'google':
-      return generateGoogleImage(imageConfig, request, id);
+      return generateGoogleImage(config, request, id);
     case 'none':
       return { id, error: 'Image generation is disabled' };
   }

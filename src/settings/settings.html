@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings — Transmogrifier</title>
+  <link rel="stylesheet" href="settings.css">
+</head>
+<body>
+  <div class="settings-layout">
+    <!-- Header bar -->
+    <header class="settings-header">
+      <div class="header-left">
+        <span class="header-icon">⚙️</span>
+        <h1>Transmogrifier Settings</h1>
+      </div>
+      <div class="header-right">
+        <span class="save-indicator hidden" id="saveIndicator">✓ Saved</span>
+        <button class="header-btn" id="backBtn" title="Back to Library">← Library</button>
+      </div>
+    </header>
+
+    <!-- Scrollable content -->
+    <main class="settings-content">
+
+      <!-- Sync Passphrase Section -->
+      <section class="settings-section" id="passphraseSection">
+        <div class="section-header">
+          <h2>🔐 Sync Passphrase</h2>
+          <span class="section-badge" id="passphraseBadge">Not set</span>
+        </div>
+        <p class="section-desc">
+          Your API keys are encrypted locally on this device automatically.
+          To sync settings across devices via OneDrive, set a passphrase here.
+          Use the same passphrase on all your devices.
+        </p>
+        <div class="field-row">
+          <label for="passphrase">Passphrase</label>
+          <div class="input-with-action">
+            <input type="password" id="passphrase" placeholder="Enter a strong passphrase…" autocomplete="off">
+            <button class="input-action-btn" id="togglePassphraseVisibility" title="Show/hide">👁️</button>
+          </div>
+        </div>
+        <div class="field-row">
+          <label for="passphraseConfirm">Confirm Passphrase</label>
+          <input type="password" id="passphraseConfirm" placeholder="Confirm passphrase…" autocomplete="off">
+        </div>
+        <div class="field-actions">
+          <button class="btn btn-primary" id="setPassphraseBtn">Set Passphrase</button>
+          <span class="field-error hidden" id="passphraseError"></span>
+        </div>
+      </section>
+
+      <!-- AI Provider Section -->
+      <section class="settings-section" id="aiSection">
+        <div class="section-header">
+          <h2>🤖 AI Provider</h2>
+          <span class="section-badge" id="aiBadge">Not configured</span>
+        </div>
+        <p class="section-desc">
+          Configure the AI provider used for transmogrification.
+          Your keys are encrypted at rest and never leave your device unencrypted.
+        </p>
+
+        <div class="field-row">
+          <label for="aiProvider">Provider</label>
+          <select id="aiProvider">
+            <option value="azure-openai">Azure OpenAI</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic Claude</option>
+            <option value="google">Google Gemini</option>
+          </select>
+        </div>
+
+        <!-- Azure OpenAI fields -->
+        <div class="provider-fields" id="aiAzureFields">
+          <div class="field-row">
+            <label for="aiAzureEndpoint">Endpoint</label>
+            <input type="url" id="aiAzureEndpoint" placeholder="https://your-resource.openai.azure.com">
+          </div>
+          <div class="field-row">
+            <label for="aiAzureKey">API Key</label>
+            <input type="password" id="aiAzureKey" placeholder="Azure OpenAI API key" autocomplete="off">
+          </div>
+          <div class="field-row">
+            <label for="aiAzureDeployment">Deployment</label>
+            <input type="text" id="aiAzureDeployment" placeholder="gpt-4o">
+          </div>
+          <div class="field-row">
+            <label for="aiAzureVersion">API Version</label>
+            <input type="text" id="aiAzureVersion" placeholder="2024-10-21">
+          </div>
+        </div>
+
+        <!-- OpenAI fields -->
+        <div class="provider-fields hidden" id="aiOpenaiFields">
+          <div class="field-row">
+            <label for="aiOpenaiKey">API Key</label>
+            <input type="password" id="aiOpenaiKey" placeholder="sk-…" autocomplete="off">
+          </div>
+          <div class="field-row">
+            <label for="aiOpenaiModel">Model</label>
+            <input type="text" id="aiOpenaiModel" placeholder="gpt-4o">
+          </div>
+        </div>
+
+        <!-- Anthropic fields -->
+        <div class="provider-fields hidden" id="aiAnthropicFields">
+          <div class="field-row">
+            <label for="aiAnthropicKey">API Key</label>
+            <input type="password" id="aiAnthropicKey" placeholder="sk-ant-…" autocomplete="off">
+          </div>
+          <div class="field-row">
+            <label for="aiAnthropicModel">Model</label>
+            <input type="text" id="aiAnthropicModel" placeholder="claude-sonnet-4-20250514">
+          </div>
+        </div>
+
+        <!-- Google fields -->
+        <div class="provider-fields hidden" id="aiGoogleFields">
+          <div class="field-row">
+            <label for="aiGoogleKey">API Key</label>
+            <input type="password" id="aiGoogleKey" placeholder="Google API key" autocomplete="off">
+          </div>
+          <div class="field-row">
+            <label for="aiGoogleModel">Model</label>
+            <input type="text" id="aiGoogleModel" placeholder="gemini-2.0-flash">
+          </div>
+        </div>
+      </section>
+
+      <!-- Image Provider Section -->
+      <section class="settings-section" id="imageSection">
+        <div class="section-header">
+          <h2>🎨 Image Provider</h2>
+          <span class="section-badge" id="imageBadge">None</span>
+        </div>
+        <p class="section-desc">
+          Configure AI image generation for illustrated recipes.
+        </p>
+
+        <div class="field-row">
+          <label for="imageProvider">Provider</label>
+          <select id="imageProvider">
+            <option value="none">None (disabled)</option>
+            <option value="azure-openai">Azure OpenAI</option>
+            <option value="openai">OpenAI</option>
+            <option value="google">Google Gemini</option>
+          </select>
+        </div>
+
+        <!-- Azure OpenAI Image fields -->
+        <div class="provider-fields hidden" id="imgAzureFields">
+          <div class="field-row">
+            <label for="imgAzureEndpoint">Endpoint</label>
+            <input type="url" id="imgAzureEndpoint" placeholder="https://your-resource.openai.azure.com">
+          </div>
+          <div class="field-row">
+            <label for="imgAzureKey">API Key</label>
+            <input type="password" id="imgAzureKey" placeholder="Azure OpenAI API key" autocomplete="off">
+          </div>
+          <div class="field-row">
+            <label for="imgAzureDeployment">Deployment</label>
+            <input type="text" id="imgAzureDeployment" placeholder="gpt-image-1">
+          </div>
+          <div class="field-row">
+            <label for="imgAzureVersion">API Version</label>
+            <input type="text" id="imgAzureVersion" placeholder="2024-10-21">
+          </div>
+        </div>
+
+        <!-- OpenAI Image fields -->
+        <div class="provider-fields hidden" id="imgOpenaiFields">
+          <div class="field-row">
+            <label for="imgOpenaiKey">API Key</label>
+            <input type="password" id="imgOpenaiKey" placeholder="sk-…" autocomplete="off">
+          </div>
+          <div class="field-row">
+            <label for="imgOpenaiModel">Model</label>
+            <input type="text" id="imgOpenaiModel" placeholder="gpt-image-1">
+          </div>
+        </div>
+
+        <!-- Google Image fields -->
+        <div class="provider-fields hidden" id="imgGoogleFields">
+          <div class="field-row">
+            <label for="imgGoogleKey">API Key</label>
+            <input type="password" id="imgGoogleKey" placeholder="Google API key" autocomplete="off">
+          </div>
+          <div class="field-row">
+            <label for="imgGoogleModel">Model</label>
+            <input type="text" id="imgGoogleModel" placeholder="gemini-2.5-flash-image">
+          </div>
+        </div>
+      </section>
+
+
+
+      <!-- Sync Section -->
+      <section class="settings-section" id="syncSection">
+        <div class="section-header">
+          <h2>🔄 Settings Sync</h2>
+          <span class="section-badge" id="syncBadge">Local only</span>
+        </div>
+        <p class="section-desc">
+          Sync your encrypted settings to OneDrive so they're available on all your devices. 
+          Requires signing in and setting an encryption passphrase.
+        </p>
+
+        <div class="sync-actions">
+          <button class="btn btn-secondary" id="pushSettingsBtn" title="Upload settings to OneDrive">
+            ⬆️ Push to Cloud
+          </button>
+          <button class="btn btn-secondary" id="pullSettingsBtn" title="Download settings from OneDrive">
+            ⬇️ Pull from Cloud
+          </button>
+        </div>
+        <p class="sync-status" id="syncStatus"></p>
+      </section>
+
+      <!-- Danger Zone -->
+      <section class="settings-section danger-section">
+        <div class="section-header">
+          <h2>⚠️ Danger Zone</h2>
+        </div>
+        <div class="field-actions">
+          <button class="btn btn-danger" id="clearSettingsBtn">Clear All Settings</button>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script type="module" src="settings.ts"></script>
+</body>
+</html>

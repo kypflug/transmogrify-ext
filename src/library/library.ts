@@ -78,6 +78,7 @@ const confirmDeleteBtn = document.getElementById('confirmDeleteBtn') as HTMLButt
 const syncBarIcon = document.getElementById('syncBarIcon') as HTMLElement;
 const syncBarText = document.getElementById('syncBarText') as HTMLElement;
 const syncBarBtn = document.getElementById('syncBarBtn') as HTMLButtonElement;
+const syncBarSettings = document.getElementById('syncBarSettings') as HTMLButtonElement;
 const syncBarSignOut = document.getElementById('syncBarSignOut') as HTMLButtonElement;
 
 // Progress reading pane
@@ -781,6 +782,10 @@ function setupEventListeners() {
   syncBarBtn.addEventListener('click', handleSyncNow);
   syncBarText.addEventListener('click', handleSyncSignIn);
   syncBarSignOut.addEventListener('click', handleSignOut);
+  syncBarSettings.addEventListener('click', () => {
+    const url = chrome.runtime.getURL('src/settings/settings.html');
+    window.location.href = url;
+  });
 
   // Listen for article changes and progress updates from service worker
   chrome.runtime.onMessage.addListener((message) => {

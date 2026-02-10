@@ -43,7 +43,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["src/viewer/viewer.html", "src/library/library.html"],
+      "resources": ["src/viewer/viewer.html", "src/library/library.html", "src/settings/settings.html"],
       "matches": ["<all_urls>"]
     }
   ]

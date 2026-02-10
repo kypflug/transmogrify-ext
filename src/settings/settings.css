@@ -1,0 +1,375 @@
+/* ─── Transmogrifier Settings — Styles ───
+ * Full-page settings with Edge/Fluent design language
+ */
+
+:root {
+  --edge-blue: #0078D4;
+  --edge-blue-hover: #106EBE;
+  --edge-blue-light: #DEECF9;
+  --edge-blue-muted: #EBF3FC;
+  --edge-teal: #00A8A8;
+  --edge-teal-dark: #038387;
+  --edge-green: #107C10;
+  --edge-green-light: #DFF6DD;
+  --edge-red: #D13438;
+  --edge-red-light: #FDE7E9;
+  --edge-amber: #CA5010;
+  --edge-surface: #FAFAFA;
+  --edge-surface-raised: #FFFFFF;
+  --edge-surface-sunken: #F3F3F3;
+  --edge-border: #E1E1E1;
+  --edge-border-subtle: #EBEBEB;
+  --edge-text-primary: #1B1B1F;
+  --edge-text-secondary: #616161;
+  --edge-text-tertiary: #9E9E9E;
+  --edge-shadow-sm: 0 1px 2px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.1);
+  --edge-shadow-md: 0 2px 6px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05);
+  --edge-radius: 6px;
+  --edge-radius-lg: 10px;
+  --settings-font: 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* ─── Reset ─── */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--settings-font);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--edge-text-primary);
+  background: var(--edge-surface-sunken);
+  height: 100vh;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.hidden { display: none !important; }
+
+/* ─── Layout ─── */
+.settings-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ─── Header ─── */
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #0078D4 0%, #038387 100%);
+  color: white;
+  flex-shrink: 0;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header-icon {
+  font-size: 20px;
+}
+
+.header-left h1 {
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.save-indicator {
+  font-size: 12px;
+  color: #A0E8A0;
+  font-weight: 500;
+  transition: opacity 0.3s;
+}
+
+.header-btn {
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: white;
+  padding: 5px 14px;
+  border-radius: var(--edge-radius);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.header-btn:hover {
+  background: rgba(255,255,255,0.25);
+}
+
+/* ─── Content ─── */
+.settings-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 720px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* ─── Section Cards ─── */
+.settings-section {
+  background: var(--edge-surface-raised);
+  border: 1px solid var(--edge-border-subtle);
+  border-radius: var(--edge-radius-lg);
+  padding: 20px 24px;
+  box-shadow: var(--edge-shadow-sm);
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.section-header h2 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--edge-text-primary);
+}
+
+.section-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-weight: 500;
+}
+
+.section-badge {
+  background: var(--edge-surface-sunken);
+  color: var(--edge-text-secondary);
+}
+
+.section-badge.configured {
+  background: var(--edge-green-light);
+  color: var(--edge-green);
+}
+
+.section-badge.warning {
+  background: var(--edge-red-light);
+  color: var(--edge-red);
+}
+
+.section-desc {
+  font-size: 12px;
+  color: var(--edge-text-secondary);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+/* ─── Form Fields ─── */
+.field-row {
+  margin-bottom: 12px;
+}
+
+.field-row:last-child {
+  margin-bottom: 0;
+}
+
+.field-row label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--edge-text-secondary);
+  margin-bottom: 4px;
+}
+
+.field-row input[type="text"],
+.field-row input[type="password"],
+.field-row input[type="url"],
+.field-row select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--edge-border);
+  border-radius: var(--edge-radius);
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--edge-text-primary);
+  background: var(--edge-surface);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.field-row input:focus,
+.field-row select:focus {
+  outline: none;
+  border-color: var(--edge-blue);
+  box-shadow: 0 0 0 1px var(--edge-blue);
+}
+
+.field-row input::placeholder {
+  color: var(--edge-text-tertiary);
+}
+
+.input-with-action {
+  display: flex;
+  gap: 4px;
+}
+
+.input-with-action input {
+  flex: 1;
+}
+
+.input-action-btn {
+  background: var(--edge-surface);
+  border: 1px solid var(--edge-border);
+  border-radius: var(--edge-radius);
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.15s;
+}
+
+.input-action-btn:hover {
+  background: var(--edge-surface-sunken);
+}
+
+/* ─── Provider Fields ─── */
+.provider-fields {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--edge-border-subtle);
+}
+
+/* ─── Checkbox ─── */
+.checkbox-row {
+  margin-top: 8px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  margin-top: 2px;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--edge-blue);
+  flex-shrink: 0;
+}
+
+.checkbox-text {
+  font-size: 13px;
+  font-weight: 400 !important;
+  color: var(--edge-text-primary) !important;
+}
+
+.checkbox-hint {
+  display: block;
+  font-size: 11px;
+  color: var(--edge-text-tertiary);
+  margin-top: 2px;
+}
+
+/* ─── Buttons ─── */
+.field-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.btn {
+  padding: 7px 16px;
+  border-radius: var(--edge-radius);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s;
+  border: none;
+}
+
+.btn-primary {
+  background: var(--edge-blue);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: var(--edge-blue-hover);
+}
+
+.btn-primary:disabled {
+  background: var(--edge-border);
+  color: var(--edge-text-tertiary);
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: var(--edge-surface);
+  color: var(--edge-text-primary);
+  border: 1px solid var(--edge-border);
+}
+
+.btn-secondary:hover {
+  background: var(--edge-surface-sunken);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-danger {
+  background: var(--edge-red);
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #B92D31;
+}
+
+.field-error {
+  font-size: 12px;
+  color: var(--edge-red);
+}
+
+/* ─── Sync Section ─── */
+.sync-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.sync-status {
+  font-size: 12px;
+  color: var(--edge-text-secondary);
+  min-height: 18px;
+}
+
+/* ─── Danger Zone ─── */
+.danger-section {
+  border-color: var(--edge-red-light);
+}
+
+.danger-section .section-header h2 {
+  color: var(--edge-red);
+}
+
+/* ─── Responsive ─── */
+@media (max-width: 520px) {
+  .settings-content {
+    padding: 16px;
+  }
+  .settings-section {
+    padding: 16px;
+  }
+}

@@ -3,7 +3,7 @@
  * Multi-provider support: Azure OpenAI, OpenAI, Anthropic (Claude), Google (Gemini)
  */
 
-import { aiConfig, isAIConfigured, getProviderName, AzureOpenAIConfig, OpenAIConfig, AnthropicConfig, GoogleConfig } from './config';
+import { resolveAIConfig, getProviderDisplayName, AzureOpenAIConfig, OpenAIConfig, AnthropicConfig, GoogleConfig } from './config';
 import { AIResponse, Recipe, buildPrompt, ImagePlaceholder } from './recipes';
 
 export interface AIRequestOptions {
@@ -30,10 +30,18 @@ export interface AIServiceResponse {
  * Call the configured AI provider to generate a complete HTML document
  */
 export async function analyzeWithAI(options: AIRequestOptions): Promise<AIServiceResponse> {
-  if (!isAIConfigured()) {
+  // Resolve effective config from user settings
+  const effectiveConfig = await resolveAIConfig();
+  
+  // Check if configured using the resolved config
+  const configured = effectiveConfig.provider === 'azure-openai'
+    ? !!((effectiveConfig as AzureOpenAIConfig).endpoint && effectiveConfig.apiKey)
+    : !!effectiveConfig.apiKey;
+
+  if (!configured) {
     return {
       success: false,
-      error: `AI is not configured. Please add your ${getProviderName()} API key to .env and rebuild.`,
+      error: `AI is not configured. Add your API key in Settings (⚙️).`,
     };
   }
 
@@ -48,7 +56,7 @@ export async function analyzeWithAI(options: AIRequestOptions): Promise<AIServic
   
   const startTime = Date.now();
   
-  console.log(`[Transmogrifier] AI Service - Starting request (${getProviderName()})`);
+  console.log(`[Transmogrifier] AI Service - Starting request (${getProviderDisplayName(effectiveConfig.provider)})`);
   console.log('[Transmogrifier] Recipe:', recipe.id, 'Include images:', includeImages);
   console.log('[Transmogrifier] Content length:', domContent.length, 'chars');
   
@@ -71,18 +79,18 @@ export async function analyzeWithAI(options: AIRequestOptions): Promise<AIServic
   try {
     let result: ProviderResult;
 
-    switch (aiConfig.provider) {
+    switch (effectiveConfig.provider) {
       case 'azure-openai':
-        result = await callAzureOpenAI(aiConfig, system, user, maxTokens, controller.signal);
+        result = await callAzureOpenAI(effectiveConfig as AzureOpenAIConfig, system, user, maxTokens, controller.signal);
         break;
       case 'openai':
-        result = await callOpenAI(aiConfig, system, user, maxTokens, controller.signal);
+        result = await callOpenAI(effectiveConfig as OpenAIConfig, system, user, maxTokens, controller.signal);
         break;
       case 'anthropic':
-        result = await callAnthropic(aiConfig, system, user, maxTokens, controller.signal);
+        result = await callAnthropic(effectiveConfig as AnthropicConfig, system, user, maxTokens, controller.signal);
         break;
       case 'google':
-        result = await callGoogle(aiConfig, system, user, maxTokens, controller.signal);
+        result = await callGoogle(effectiveConfig as GoogleConfig, system, user, maxTokens, controller.signal);
         break;
     }
     

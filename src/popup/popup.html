@@ -11,7 +11,10 @@
       <!-- Top bar -->
       <div class="popup-top-bar">
         <span class="top-bar-brand">📦 Transmogrifier</span>
-        <button class="library-btn" id="openLibraryBtn" title="Open Library">📖 Library</button>
+        <div class="top-bar-actions">
+          <button class="icon-btn" id="openSettingsBtn" title="Settings">⚙️</button>
+          <button class="library-btn" id="openLibraryBtn" title="Open Library">📖 Library</button>
+        </div>
       </div>
 
       <!-- Main content -->
@@ -75,8 +78,8 @@ Examples:
               <button id="remixReadBtn" class="primary-btn">
                 <span class="btn-text">✨ Transmogrify &amp; Read</span>
               </button>
-              <button id="remixSendBtn" class="secondary-send-btn" title="Start transmogrification without navigating">
-                <span class="btn-text">📥 Send to Library</span>
+              <button id="remixSendBtn" class="secondary-send-btn" title="Send to cloud for processing, or process locally if cloud is unavailable">
+                <span class="btn-text">☁️ Send to Cloud</span>
               </button>
             </div>
           </footer>

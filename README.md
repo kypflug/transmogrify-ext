@@ -8,6 +8,9 @@ Supports **multiple AI providers** out of the box — Azure OpenAI, OpenAI, Anth
 
 - **AI-Powered Transformation**: Generates complete, standalone HTML documents via your preferred LLM
 - **Multi-Provider Support**: Azure OpenAI, OpenAI, Anthropic (Claude), or Google (Gemini)
+- **BYOK (Bring Your Own Key)**: All API keys configured via the in-extension Settings UI — no build-time secrets
+- **Encrypted Key Storage**: AES-256-GCM encryption with PBKDF2 key derivation protects all API keys at rest
+- **Settings Sync**: Encrypted settings sync to OneDrive so keys carry across devices
 - **AI Image Generation**: Optional image generation via Azure OpenAI, OpenAI, or Google Gemini
 - **Built-in Recipes**: Focus, Reader, Aesthetic, Illustrated, Visualize, Declutter, Interview, and Custom modes
 - **Pin Favorites**: Pin preferred recipes to the top of the list
@@ -42,69 +45,18 @@ The **Library of Transmogrifia** ([kypflug/transmogrifia-pwa](https://github.com
 
 ### Configuration
 
-1. Copy `.env.example` to `.env`
-2. Set `VITE_AI_PROVIDER` to your provider and fill in the matching credentials.
+All API keys and provider settings are managed through the **Settings UI** built into the extension — no `.env` file or build-time secrets needed.
 
-Only the variables for your chosen provider need to be set — the rest can stay commented out.
-
-#### Azure OpenAI
-```env
-VITE_AI_PROVIDER=azure-openai
-VITE_AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
-VITE_AZURE_OPENAI_API_KEY=your-key
-VITE_AZURE_OPENAI_DEPLOYMENT=gpt-5.2
-VITE_AZURE_OPENAI_API_VERSION=2024-10-21
-```
-
-#### OpenAI
-```env
-VITE_AI_PROVIDER=openai
-VITE_OPENAI_API_KEY=sk-...
-VITE_OPENAI_MODEL=gpt-4o          # or gpt-4.1, o3, etc.
-```
-
-#### Anthropic (Claude)
-```env
-VITE_AI_PROVIDER=anthropic
-VITE_ANTHROPIC_API_KEY=sk-ant-...
-VITE_ANTHROPIC_MODEL=claude-sonnet-4-20250514
-```
-
-#### Google (Gemini)
-```env
-VITE_AI_PROVIDER=google
-VITE_GOOGLE_API_KEY=AIza...
-VITE_GOOGLE_MODEL=gemini-2.0-flash
-```
-
-#### Image Generation (optional)
-Image generation is available with Azure OpenAI, OpenAI, or Google Gemini. Set `VITE_IMAGE_PROVIDER` and the matching key:
-
-```env
-# Azure OpenAI image generation
-VITE_IMAGE_PROVIDER=azure-openai
-VITE_AZURE_IMAGE_ENDPOINT=https://your-resource.openai.azure.com
-VITE_AZURE_IMAGE_API_KEY=your-image-key
-VITE_AZURE_IMAGE_DEPLOYMENT=gpt-image-1.5
-```
-
-```env
-# OpenAI direct image generation
-VITE_IMAGE_PROVIDER=openai
-VITE_OPENAI_IMAGE_MODEL=gpt-image-1   # or dall-e-3
-# Uses VITE_OPENAI_API_KEY by default, or set VITE_OPENAI_IMAGE_API_KEY
-```
-
-```env
-# Google Gemini image generation (Nano Banana)
-VITE_IMAGE_PROVIDER=google
-VITE_GOOGLE_IMAGE_MODEL=gemini-2.5-flash-image  # or gemini-3-pro-image-preview
-# Uses VITE_GOOGLE_API_KEY by default, or set VITE_GOOGLE_IMAGE_API_KEY
-```
-
-Set `VITE_IMAGE_PROVIDER=none` (or omit it) to disable image generation entirely.
+1. Install the extension (see below)
+2. Click the ⚙ gear icon in the extension popup or right-click the extension icon → **Settings**
+3. Choose your **AI Provider** (Azure OpenAI, OpenAI, Anthropic, or Google) and enter your API key
+4. (Optional) Choose an **Image Provider** for AI-generated illustrations
+5. (Optional) Configure a **Cloud API URL** for background processing (defaults to `https://transmogrifier-api.azurewebsites.net` — see [cloud/](./cloud/))
+6. (Optional) Set a **Sync Passphrase** to encrypt settings for OneDrive cross-device sync
 
 > **Note:** Anthropic does not currently offer an image generation API.
+
+Keys are encrypted locally with a per-device key (no passphrase needed). For cross-device sync, a passphrase encrypts settings on OneDrive.
 
 ### Build
 ```bash
@@ -177,13 +129,21 @@ src/
 |   +-- library.html
 |   +-- library.css
 |   +-- library.ts
++-- settings/             # Settings UI (API keys, providers, encryption)
+|   +-- settings.html
+|   +-- settings.css
+|   +-- settings.ts
 +-- viewer/               # Article viewer page
 +-- background/           # Service worker (orchestration)
 +-- shared/               # Types, recipes, services
     +-- ai-service.ts         # Multi-provider AI API (Azure OpenAI / OpenAI / Anthropic / Google)
     +-- image-service.ts      # Image generation API (Azure OpenAI / OpenAI / Google Gemini)
-    +-- config.ts             # Provider selection & env-var loading
-    +-- storage-service.ts    # IndexedDB storage
+    +-- config.ts             # Provider types & runtime config resolution from Settings
+    +-- crypto-service.ts     # AES-256-GCM encryption (device key + passphrase modes)
+    +-- device-key.ts         # Per-device non-extractable CryptoKey (IndexedDB)
+    +-- settings-service.ts   # Settings CRUD, sync passphrase, encrypted sync
+    +-- cloud-queue-service.ts # Cloud function queue client (BYOK)
+    +-- storage-service.ts    # IndexedDB article storage
     +-- auth-service.ts       # Microsoft OAuth2 PKCE
     +-- onedrive-service.ts   # OneDrive Graph API client
     +-- sync-service.ts       # Bidirectional sync orchestrator

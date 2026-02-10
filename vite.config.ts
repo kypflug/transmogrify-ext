@@ -13,6 +13,7 @@ export default defineConfig({
         popup: 'src/popup/popup.html',
         viewer: 'src/viewer/viewer.html',
         library: 'src/library/library.html',
+        settings: 'src/settings/settings.html',
       },
     },
   },

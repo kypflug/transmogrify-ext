@@ -5,6 +5,9 @@ Transmogrifier is a Microsoft Edge extension (Manifest V3) that transforms web p
 
 **Key Features**:
 - Complete HTML generation (not DOM mutation)
+- BYOK (Bring Your Own Key) — all API keys configured via in-extension Settings UI
+- AES-256-GCM encrypted key storage with PBKDF2 key derivation (600k iterations)
+- Encrypted settings sync to OneDrive for cross-device key portability
 - IndexedDB storage for saved articles
 - Full Library page for browsing, reading, and managing articles
 - OneDrive sync for cross-device article sharing
@@ -81,12 +84,17 @@ The PWA also uses delta sync, filters `.json` client-side (no `$filter`), and ca
 | `src/content/index.ts` | Content script message handling |
 | `src/shared/ai-service.ts` | Multi-provider AI integration (Azure OpenAI / OpenAI / Anthropic / Google) |
 | `src/shared/image-service.ts` | Image generation (Azure OpenAI / OpenAI / Google Gemini) |
-| `src/shared/config.ts` | Provider selection & env-var loading |
+| `src/shared/config.ts` | Provider types & runtime config resolution from Settings |
+| `src/shared/crypto-service.ts` | AES-256-GCM encryption (device key + passphrase modes) |
+| `src/shared/device-key.ts` | Per-device non-extractable CryptoKey generation & storage |
+| `src/shared/settings-service.ts` | Settings CRUD, sync passphrase, encrypted sync |
+| `src/shared/cloud-queue-service.ts` | Cloud function queue client (always sends user's keys) |
 | `src/shared/storage-service.ts` | IndexedDB article storage (TransmogrifierDB) |
 | `src/shared/auth-service.ts` | Microsoft OAuth2 PKCE authentication |
 | `src/shared/onedrive-service.ts` | OneDrive Graph API client |
 | `src/shared/sync-service.ts` | Bidirectional sync orchestrator |
 | `src/shared/recipes.ts` | Built-in prompts and response format |
+| `src/settings/settings.ts` | Settings UI page logic |
 | `src/popup/popup.ts` | Recipe picker + split action buttons (no tabs) |
 | `src/library/library.ts` | Full two-pane article browser |
 | `src/viewer/viewer.ts` | Article viewer with toolbar |
@@ -262,39 +270,56 @@ Cross-device article sync via Microsoft Graph API:
 6. Alarm fires every 5 minutes for periodic pull
 7. PWA users see changes on their next sync (delta-based)
 
-## Environment Configuration
+## Settings & Key Management
 
-Create `.env` based on `.env.example`. Set `VITE_AI_PROVIDER` to choose your LLM backend:
+All API keys and provider configuration are managed at runtime through the **Settings UI** — there are no build-time secrets or `.env` variables for API keys.
+
+### Architecture
 
 ```
-# Provider: azure-openai | openai | anthropic | google
-VITE_AI_PROVIDER=azure-openai
+User enters keys in Settings UI
+  → settings-service.ts encrypts via device key (AES-256-GCM, non-extractable CryptoKey in IndexedDB)
+  → Locally-encrypted envelope stored in chrome.storage.local
+  → No passphrase needed for day-to-day use
 
-# --- Azure OpenAI example ---
-VITE_AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
-VITE_AZURE_OPENAI_API_KEY=your-key
-VITE_AZURE_OPENAI_DEPLOYMENT=gpt-5.2
-VITE_AZURE_OPENAI_API_VERSION=2024-10-21
-
-# --- Or OpenAI direct ---
-# VITE_OPENAI_API_KEY=sk-...
-# VITE_OPENAI_MODEL=gpt-4o
-
-# --- Or Anthropic ---
-# VITE_ANTHROPIC_API_KEY=sk-ant-...
-# VITE_ANTHROPIC_MODEL=claude-sonnet-4-20250514
-
-# --- Or Google Gemini ---
-# VITE_GOOGLE_API_KEY=AIza...
-# VITE_GOOGLE_MODEL=gemini-2.0-flash
-
-# Image provider: azure-openai | openai | google | none
-# VITE_IMAGE_PROVIDER=azure-openai
-VITE_AZURE_IMAGE_ENDPOINT=https://your-image-resource.openai.azure.com
-VITE_AZURE_IMAGE_API_KEY=your-image-key
-VITE_AZURE_IMAGE_DEPLOYMENT=gpt-image-1.5
-VITE_AZURE_IMAGE_API_VERSION=2024-10-21
+For OneDrive sync:
+  → User sets a sync passphrase (once per device)
+  → Settings re-encrypted with PBKDF2 + AES-256-GCM for cloud storage
+  → Uploaded to /drive/special/approot/settings.enc.json
+  → New device: enter same passphrase → decrypt cloud → re-encrypt with local device key
 ```
+
+### Key Types
+
+```typescript
+interface TransmogrifierSettings {
+  ai?: AIProviderSettings;       // provider + credentials
+  image?: ImageProviderSettings; // provider + credentials
+  cloud?: CloudSettings;         // { apiUrl: string }
+}
+
+// Local storage (device key)
+interface LocalEncryptedEnvelope {
+  v: 1;
+  iv: string;    // base64 (12 bytes)
+  data: string;  // base64 ciphertext
+}
+
+// Cloud sync (passphrase)
+interface EncryptedEnvelope {
+  v: 1;
+  salt: string;  // base64 (16 bytes, PBKDF2)
+  iv: string;    // base64 (12 bytes)
+  data: string;  // base64 ciphertext
+}
+```
+
+### Crypto Parameters
+- **Local encryption**: AES-256-GCM with non-extractable `CryptoKey` stored in IndexedDB (`TransmogrifierKeyStore`)
+- **Cloud sync encryption**: AES-256-GCM with PBKDF2-SHA256, 600,000 iterations
+- **IV**: 12 bytes, cryptographically random, fresh per encryption
+- **Salt** (PBKDF2 only): 16 bytes, cryptographically random, fresh per encryption
+- **Sync passphrase**: held in `chrome.storage.session` (memory-only, survives SW restarts, cleared on browser close)
 
 ## API Notes
 - OpenAI / Azure OpenAI use `max_completion_tokens`; Anthropic uses `max_tokens`; Google uses `maxOutputTokens`
@@ -304,13 +329,53 @@ VITE_AZURE_IMAGE_API_VERSION=2024-10-21
 - AbortController support for request cancellation
 - JSON output: OpenAI/Azure use `response_format`; Google uses `responseMimeType`; Anthropic relies on prompt instructions
 
+## Cloud Functions (Azure)
+
+The cloud backend (`cloud/`) processes transmogrification jobs asynchronously:
+
+### Architecture
+```
+POST /api/queue  →  Azure Storage Queue  →  Queue-trigger Function
+                                                ├─ Fetch & extract page (linkedom + Readability)
+                                                ├─ Call AI provider (user's keys)
+                                                └─ Upload to user's OneDrive approot/articles/
+```
+
+### Key Files
+| File | Purpose |
+|------|---------|  
+| `cloud/src/functions/queue.ts` | HTTP trigger: validates token, enqueues job, returns 202 |
+| `cloud/src/functions/process.ts` | Queue trigger: fetch → AI → OneDrive upload |
+| `cloud/src/shared/content-extractor.ts` | Server-side extraction (linkedom + Readability) |
+| `cloud/src/shared/ai-service.ts` | Multi-provider AI calls (no server keys) |
+| `cloud/src/shared/onedrive.ts` | Uploads articles to user's OneDrive |
+| `cloud/src/shared/recipes.ts` | Inlined recipe prompts for cloud use |
+
+### Deployment
+- **Function App**: `transmogrifier-api` at `https://transmogrifier-api.azurewebsites.net`
+- **Region**: westus2 (Linux Consumption Plan)
+- **Runtime**: Node 20, ESM (`"type": "module"` in package.json)
+- **Timeout**: 10 minutes (`functionTimeout` in host.json — max for Consumption)
+- **Application Insights**: `transmogrifier-insights` for error visibility
+- **CORS**: Restricted to `https://transmogrifia.app` (extensions bypass CORS)
+- **Default cloud URL**: Hardcoded in `settings-service.ts` as `DEFAULT_CLOUD_URL`
+
+### linkedom Caveat
+linkedom's `parseHTML()` places HTML fragments in `documentElement`, not `body`. The content extractor's `htmlToStructuredText()` falls back to `documentElement` when `body` is empty — this is critical for correctly processing Readability's output.
+
 ## Security Notes
-- API keys embedded at build time (extension-only use)
+- **BYOK-only**: No API keys in source code, build output, or server-side config — users supply their own keys via the Settings UI
+- **Encrypted at rest**: All API keys encrypted with per-device AES-256-GCM key (non-extractable, stored in IndexedDB)
+- **Two-tier encryption**: Local device key for transparent access; user passphrase (PBKDF2, 600k iterations) only for OneDrive sync
+- **Sync passphrase in memory only**: Held in `chrome.storage.session`, cleared on browser close, never written to disk
+- **Zero build-time secrets**: No `import.meta.env` references; `.env` file contains no secrets
+- **Cloud function is keyless**: The Azure Function has no server-side AI keys; the extension always sends the user's own keys in the request body
 - Generated HTML displayed in sandboxed iframe
 - No external resources loaded from generated HTML
 - Images stored as embedded base64 data URLs
 - OAuth2 PKCE flow (no client secret required)
 - OneDrive AppData folder is app-private
+- Encrypted settings optionally synced to OneDrive (`settings.enc.json`) — only decryptable with the user's passphrase
 
 ## Testing Checklist
 - [ ] Test recipes on news sites, blogs, documentation
@@ -330,10 +395,13 @@ VITE_AZURE_IMAGE_API_VERSION=2024-10-21
 - [ ] Test sync push (save, delete, favorite)
 - [ ] Test sync pull (periodic and manual)
 - [ ] Test sync conflict resolution
+- [ ] Test cloud transmogrification (queue job, verify article appears in OneDrive)
+- [ ] Test active remix tracking in popup (progress, error display, dismiss)
+- [ ] Test cloud-queued active remixes in popup
 
 ## Future Ideas
-- [ ] Queue system for many Parallel Jobs
 - [ ] Browser notifications when Transmogrify completes
 - [ ] Site-specific recipe presets
 - [ ] Streaming AI responses for faster feedback
 - [ ] Image caching to avoid regeneration
+- [ ] Job status endpoint (Table Storage) for cloud jobs

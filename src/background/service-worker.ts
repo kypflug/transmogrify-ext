@@ -9,7 +9,7 @@ import { loadPreferences, savePreferences } from '../shared/utils';
 import { analyzeWithAI } from '../shared/ai-service';
 import { getRecipe, ImagePlaceholder, BUILT_IN_RECIPES } from '../shared/recipes';
 import { generateImages, base64ToDataUrl, ImageGenerationRequest } from '../shared/image-service';
-import { isImageConfigured } from '../shared/config';
+import { isImageConfiguredAsync } from '../shared/config';
 import { 
   saveArticle, 
   getArticle, 
@@ -30,6 +30,9 @@ import {
   getSyncState,
   setupSyncAlarm,
 } from '../shared/sync-service';
+import { queueForCloud, isCloudQueueConfiguredAsync } from '../shared/cloud-queue-service';
+import { uploadSettings, downloadSettings } from '../shared/onedrive-service';
+import { getEncryptedEnvelopeForSync, importEncryptedEnvelope, invalidateCache as invalidateSettingsCache } from '../shared/settings-service';
 
 // In-memory storage for AbortControllers (per request)
 const abortControllers = new Map<string, AbortController>();
@@ -139,6 +142,7 @@ async function updateBadge(remixes: Record<string, RemixRequest>) {
       'analyzing': 'AI',
       'generating-images': 'IMG',
       'saving': 'SAVE',
+      'cloud-queued': '☁️',
     };
     await chrome.action.setBadgeText({ text: statusLabel[inProgress[0].status] || '...' });
     await chrome.action.setBadgeBackgroundColor({ color: '#9C27B0' });
@@ -173,6 +177,20 @@ async function cleanupStaleRemixes(): Promise<{ cleaned: number; remaining: numb
     const hasController = abortControllers.has(id);
     
     if (!hasController) {
+      // Cloud-queued jobs don't have controllers — they're fire-and-forget.
+      // They get cleaned up by their own scheduleCleanup timer.
+      if (remix.status === 'cloud-queued') {
+        // Update step text as time passes
+        if (elapsed > 5 * 60 * 1000) {
+          remix.step = 'Processing... article will appear on next sync';
+          changed = true;
+        } else if (elapsed > 60 * 1000) {
+          remix.step = `Cloud processing (${Math.round(elapsed / 1000)}s)`;
+          changed = true;
+        }
+        remaining[id] = remix;
+        continue;
+      }
       // No controller means the service worker restarted and the fetch is gone.
       // This is a truly orphaned request - mark as error.
       console.log(`[Transmogrifier] Cleaning orphaned remix ${id} (${Math.round(elapsed / 1000)}s old, no controller)`);
@@ -297,6 +315,15 @@ async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
       await updateRemixProgress(requestId, { status: 'error', error: 'Cancelled by user' });
       setTimeout(() => removeRemixRequest(requestId), 3000);
       
+      return { success: true };
+    }
+
+    case 'DISMISS_REMIX': {
+      const requestId = message.payload?.requestId;
+      if (!requestId) {
+        return { success: false, error: 'No request ID provided' };
+      }
+      await removeRemixRequest(requestId);
       return { success: true };
     }
 
@@ -552,6 +579,80 @@ async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
       }
     }
 
+    case 'CLOUD_QUEUE': {
+      try {
+        const url = message.payload?.url;
+        const recipeId = message.payload?.recipeId || 'focus';
+        const customPrompt = message.payload?.customPrompt;
+        if (!url) return { success: false, error: 'No URL provided' };
+        const cloudReady = await isCloudQueueConfiguredAsync();
+        if (!cloudReady) {
+          return { success: false, error: 'Cloud API is not configured.' };
+        }
+
+        // Extract page title from URL for display
+        let pageTitle: string;
+        try { pageTitle = new URL(url).hostname; } catch { pageTitle = url; }
+
+        const result = await queueForCloud(url, recipeId, customPrompt);
+
+        // Track as an active remix so it shows in the popup
+        const requestId = result.jobId;
+        await updateRemixProgress(requestId, {
+          requestId,
+          tabId: -1,
+          status: 'cloud-queued',
+          step: 'Queued for cloud processing',
+          startTime: Date.now(),
+          pageTitle,
+          recipeId,
+          cloudJobId: result.jobId,
+          sourceUrl: url,
+        });
+
+        // Auto-clean cloud jobs after 15 minutes (they're fire-and-forget)
+        scheduleCleanup(requestId, 15 * 60 * 1000);
+
+        return { success: true, cloudQueue: { jobId: result.jobId, message: result.message } };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    }
+
+    // ─── Settings Sync Messages ─────────────────
+
+    case 'SETTINGS_PUSH': {
+      try {
+        const envelope = await getEncryptedEnvelopeForSync();
+        if (!envelope) {
+          return { success: false, error: 'No settings to push. Configure settings first.' };
+        }
+        const json = JSON.stringify(envelope);
+        await uploadSettings(json);
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    }
+
+    case 'SETTINGS_PULL': {
+      try {
+        const json = await downloadSettings();
+        if (!json) {
+          return { success: false, error: 'No settings found in OneDrive' };
+        }
+        const data = JSON.parse(json);
+        const imported = await importEncryptedEnvelope(data.envelope, data.updatedAt);
+        if (!imported) {
+          return { success: false, error: 'Failed to decrypt cloud settings. Check your passphrase.' };
+        }
+        invalidateSettingsCache();
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    }
+
     default:
       return { success: false, error: 'Unknown message type' };
   }
@@ -626,7 +727,6 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
     if (!extractResponse?.success || !extractResponse.content) {
       const error = extractResponse?.error || 'Failed to extract content';
       await updateRemixProgress(requestId, { status: 'error', error });
-      scheduleCleanup(requestId);
       return { success: false, error, requestId };
     }
     content = extractResponse.content;
@@ -634,7 +734,6 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
   } catch (error) {
     const errorMsg = `Content script error: ${error}`;
     await updateRemixProgress(requestId, { status: 'error', error: errorMsg });
-    scheduleCleanup(requestId);
     return { success: false, error: errorMsg, requestId };
   }
 
@@ -683,7 +782,6 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
   if (!aiResult.success || !aiResult.data) {
     const error = aiResult.error || 'AI analysis failed';
     await updateRemixProgress(requestId, { status: 'error', error: `${error} (after ${aiDuration}s)` });
-    scheduleCleanup(requestId);
     return { success: false, error, requestId };
   }
 
@@ -691,7 +789,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
 
   // Generate images if requested and AI returned image placeholders
   if (generateImagesFlag && aiResult.data.images && aiResult.data.images.length > 0) {
-    if (!isImageConfigured()) {
+    if (!await isImageConfiguredAsync()) {
       console.warn('[Transmogrifier] Image generation requested but not configured');
     } else {
       await updateRemixProgress(requestId, { 
@@ -746,8 +844,8 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
       articleId: savedArticle.id,
     });
     
-    // Cleanup after delay
-    scheduleCleanup(requestId);
+    // Cleanup success after short delay
+    scheduleCleanup(requestId, 5000);
     
     return { 
       success: true, 
@@ -758,7 +856,6 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
   } catch (error) {
     const errorMsg = `Failed to save article: ${error}`;
     await updateRemixProgress(requestId, { status: 'error', error: errorMsg });
-    scheduleCleanup(requestId);
     return { success: false, error: errorMsg, requestId };
   }
 }
@@ -855,14 +952,13 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
   if (!aiResult.success || !aiResult.data) {
     const error = aiResult.error || 'AI analysis failed';
     await updateRemixProgress(requestId, { status: 'error', error: `${error} (after ${aiDuration}s)` });
-    scheduleCleanup(requestId);
     return { success: false, error, requestId };
   }
   
   let finalHtml = aiResult.data.html;
   
   // Generate images if requested
-  if (generateImagesFlag && aiResult.data.images && aiResult.data.images.length > 0 && isImageConfigured()) {
+  if (generateImagesFlag && aiResult.data.images && aiResult.data.images.length > 0 && await isImageConfiguredAsync()) {
     await updateRemixProgress(requestId, { 
       status: 'generating-images', 
       step: `Generating ${aiResult.data.images.length} images...` 
@@ -902,7 +998,7 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
     articleId: newArticle.id,
   });
   
-  scheduleCleanup(requestId);
+  scheduleCleanup(requestId, 5000);
   
   return { 
     success: true, 

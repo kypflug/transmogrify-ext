@@ -56,12 +56,16 @@ export interface RemixMessage {
     | 'RESPIN_ARTICLE'
     | 'GET_ACTIVE_REMIXES'
     | 'CANCEL_REMIX'
+    | 'DISMISS_REMIX'
     | 'CLEAR_STALE_REMIXES'
     | 'SYNC_SIGN_IN'
     | 'SYNC_SIGN_OUT'
     | 'SYNC_STATUS'
     | 'SYNC_NOW'
-    | 'SYNC_DOWNLOAD_ARTICLE';
+    | 'SYNC_DOWNLOAD_ARTICLE'
+    | 'CLOUD_QUEUE'
+    | 'SETTINGS_PUSH'
+    | 'SETTINGS_PULL';
   payload?: RemixPayload;
 }
 
@@ -84,6 +88,7 @@ export interface RemixPayload {
   settings?: Partial<UserPreferences>;
   articleId?: string; // For article operations
   requestId?: string; // For parallel remix tracking
+  url?: string; // For cloud queue (URL to transmogrify)
 }
 
 /** Response from content script */
@@ -112,10 +117,15 @@ export interface RemixResponse {
     isSyncing: boolean;
     lastError?: string;
   };
+  // Cloud queue fields
+  cloudQueue?: {
+    jobId: string;
+    message: string;
+  };
 }
 
 /** Status of a remix operation */
-export type RemixStatus = 'idle' | 'extracting' | 'analyzing' | 'generating-images' | 'saving' | 'complete' | 'error';
+export type RemixStatus = 'idle' | 'extracting' | 'analyzing' | 'generating-images' | 'saving' | 'complete' | 'error' | 'cloud-queued';
 
 /** A single remix request for parallel tracking */
 export interface RemixRequest {
@@ -129,11 +139,13 @@ export interface RemixRequest {
   error?: string;
   articleId?: string;
   warning?: string; // Set when remix is taking unusually long
+  cloudJobId?: string; // For cloud-queued jobs
+  sourceUrl?: string; // URL being processed (for cloud jobs)
 }
 
 /** Progress state for resilient operations */
 export interface RemixProgressState {
-  status: 'idle' | 'extracting' | 'analyzing' | 'generating-images' | 'saving' | 'complete' | 'error';
+  status: RemixStatus;
   step: string;
   error?: string;
   startTime?: number;

@@ -77,6 +77,27 @@ body {
   color: var(--edge-text-primary);
 }
 
+.top-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px;
+  border-radius: var(--edge-radius);
+  transition: background 0.15s;
+  line-height: 1;
+}
+
+.icon-btn:hover {
+  background: var(--edge-surface-sunken);
+}
+
 /* ─── Remix View ─── */
 .remix-view {
   flex: 1;
@@ -287,6 +308,14 @@ body {
 .active-remix-item.error {
   background: var(--edge-red-light);
   border-color: #F5C6CB;
+}
+
+.active-remix-error {
+  font-size: 10px;
+  color: var(--edge-red, #dc3545);
+  margin-top: 2px;
+  line-height: 1.3;
+  word-break: break-word;
 }
 
 /* ─── Recipe Selector ─── */
@@ -735,4 +764,68 @@ body {
   background: var(--edge-blue-light);
   border-color: var(--edge-blue);
   color: var(--edge-blue);
+}
+
+/* ─── Dark Mode ─── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --edge-blue: #4BA0E8;
+    --edge-blue-hover: #6BB5F0;
+    --edge-blue-light: #1A3A5C;
+    --edge-blue-muted: #162A40;
+    --edge-teal: #2EC4C4;
+    --edge-teal-dark: #5FD4D4;
+    --edge-teal-light: #163333;
+    --edge-green: #4CAF50;
+    --edge-green-light: #1B3A1B;
+    --edge-red: #F06060;
+    --edge-red-light: #3C1A1A;
+    --edge-amber: #E87040;
+    --edge-yellow: #F0C800;
+    --edge-yellow-light: #332D0A;
+    --edge-yellow-dark: #E0BB00;
+    --edge-surface: #1E1E1E;
+    --edge-surface-raised: #2A2A2A;
+    --edge-surface-sunken: #171717;
+    --edge-border: #3C3C3C;
+    --edge-border-subtle: #333333;
+    --edge-text-primary: #E0E0E0;
+    --edge-text-secondary: #A0A0A0;
+    --edge-text-tertiary: #6E6E6E;
+    --edge-shadow-sm: 0 1px 2px rgba(0,0,0,0.3), 0 1px 3px rgba(0,0,0,0.4);
+    --edge-shadow-md: 0 2px 6px rgba(0,0,0,0.35), 0 4px 12px rgba(0,0,0,0.25);
+    --edge-shadow-lg: 0 4px 16px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.3);
+  }
+
+  .toggle-slider {
+    background: #555;
+  }
+
+  .toggle-slider::after {
+    background: #DDD;
+  }
+
+  .loading-overlay {
+    background: rgba(30, 30, 30, 0.96);
+  }
+
+  .active-remix-item.complete {
+    border-color: #2E5C2E;
+  }
+
+  .active-remix-item.error {
+    border-color: #5C2A2A;
+  }
+
+  .error-text {
+    border-color: #5C2A2A;
+  }
+
+  .active-count {
+    color: #1E1E1E;
+  }
+
+  .primary-btn:disabled {
+    background: #3C3C3C;
+  }
 }

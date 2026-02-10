@@ -1,7 +1,9 @@
 /**
  * AI Configuration
- * Supports multiple providers: Azure OpenAI, OpenAI, Anthropic (Claude), Google (Gemini)
- * Provider is selected via VITE_AI_PROVIDER env var at build time.
+ * 
+ * Type definitions for AI and image provider configs.
+ * All actual keys/settings come from the Settings UI (encrypted storage) 
+ * at runtime — nothing is baked into the build.
  */
 
 export type AIProvider = 'azure-openai' | 'openai' | 'anthropic' | 'google';
@@ -63,113 +65,142 @@ export interface NoImageConfig {
 
 export type ImageConfig = AzureImageConfig | OpenAIImageConfig | GoogleImageConfig | NoImageConfig;
 
-// --- Build the active configs from env vars ---
+// ─── Runtime config resolution (from encrypted user settings only) ────────────
 
-const aiProvider = (import.meta.env.VITE_AI_PROVIDER || 'azure-openai') as AIProvider;
-const imageProvider = (import.meta.env.VITE_IMAGE_PROVIDER || 'azure-openai') as ImageProvider;
+import { getEffectiveAIConfig, getEffectiveImageConfig, getEffectiveCloudUrl } from './settings-service';
 
-function buildAIConfig(): AIConfig {
-  switch (aiProvider) {
-    case 'openai':
-      return {
-        provider: 'openai',
-        apiKey: import.meta.env.VITE_OPENAI_API_KEY || '',
-        model: import.meta.env.VITE_OPENAI_MODEL || 'gpt-4o',
-      };
-    case 'anthropic':
-      return {
-        provider: 'anthropic',
-        apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY || '',
-        model: import.meta.env.VITE_ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
-      };
-    case 'google':
-      return {
-        provider: 'google',
-        apiKey: import.meta.env.VITE_GOOGLE_API_KEY || '',
-        model: import.meta.env.VITE_GOOGLE_MODEL || 'gemini-2.0-flash',
-      };
-    case 'azure-openai':
-    default:
-      return {
-        provider: 'azure-openai',
-        endpoint: import.meta.env.VITE_AZURE_OPENAI_ENDPOINT || '',
-        apiKey: import.meta.env.VITE_AZURE_OPENAI_API_KEY || '',
-        deployment: import.meta.env.VITE_AZURE_OPENAI_DEPLOYMENT || 'gpt-52',
-        apiVersion: import.meta.env.VITE_AZURE_OPENAI_API_VERSION || '2024-10-21',
-      };
+/** Human-readable name for any provider string */
+export function getProviderDisplayName(provider: AIProvider | ImageProvider): string {
+  switch (provider) {
+    case 'azure-openai': return 'Azure OpenAI';
+    case 'openai': return 'OpenAI';
+    case 'anthropic': return 'Anthropic Claude';
+    case 'google': return 'Google Gemini';
+    case 'none': return 'None';
   }
 }
 
-function buildImageConfig(): ImageConfig {
-  switch (imageProvider) {
-    case 'openai':
-      return {
-        provider: 'openai',
-        apiKey: import.meta.env.VITE_OPENAI_API_KEY || import.meta.env.VITE_OPENAI_IMAGE_API_KEY || '',
-        model: import.meta.env.VITE_OPENAI_IMAGE_MODEL || 'gpt-image-1',
-      };
-    case 'google':
-      return {
-        provider: 'google',
-        apiKey: import.meta.env.VITE_GOOGLE_API_KEY || import.meta.env.VITE_GOOGLE_IMAGE_API_KEY || '',
-        model: import.meta.env.VITE_GOOGLE_IMAGE_MODEL || 'gemini-2.5-flash-image',
-      };
-    case 'azure-openai':
-      return {
-        provider: 'azure-openai',
-        endpoint: import.meta.env.VITE_AZURE_IMAGE_ENDPOINT || '',
-        apiKey: import.meta.env.VITE_AZURE_IMAGE_API_KEY || '',
-        deployment: import.meta.env.VITE_AZURE_IMAGE_DEPLOYMENT || 'gpt-image-1',
-        apiVersion: import.meta.env.VITE_AZURE_IMAGE_API_VERSION || '2024-10-21',
-      };
-    case 'none':
-    default:
-      // If no image provider is set, try Azure as fallback for backwards compat
-      if (import.meta.env.VITE_AZURE_IMAGE_ENDPOINT && import.meta.env.VITE_AZURE_IMAGE_API_KEY) {
-        return {
-          provider: 'azure-openai',
-          endpoint: import.meta.env.VITE_AZURE_IMAGE_ENDPOINT,
-          apiKey: import.meta.env.VITE_AZURE_IMAGE_API_KEY,
-          deployment: import.meta.env.VITE_AZURE_IMAGE_DEPLOYMENT || 'gpt-image-1',
-          apiVersion: import.meta.env.VITE_AZURE_IMAGE_API_VERSION || '2024-10-21',
-        };
+/** Default (unconfigured) AI config */
+const UNCONFIGURED_AI: AIConfig = {
+  provider: 'azure-openai',
+  endpoint: '',
+  apiKey: '',
+  deployment: '',
+  apiVersion: '',
+};
+
+/** Default (unconfigured) image config */
+const UNCONFIGURED_IMAGE: ImageConfig = { provider: 'none' };
+
+/**
+ * Resolve the effective AI config at runtime from user settings.
+ * Returns an unconfigured placeholder if no settings exist.
+ */
+export async function resolveAIConfig(): Promise<AIConfig> {
+  try {
+    const userConfig = await getEffectiveAIConfig();
+    if (userConfig) {
+      switch (userConfig.provider) {
+        case 'azure-openai':
+          return {
+            provider: 'azure-openai',
+            endpoint: userConfig.endpoint || '',
+            apiKey: userConfig.apiKey,
+            deployment: userConfig.deployment || 'gpt-4o',
+            apiVersion: userConfig.apiVersion || '2024-10-21',
+          };
+        case 'openai':
+          return { provider: 'openai', apiKey: userConfig.apiKey, model: userConfig.model || 'gpt-4o' };
+        case 'anthropic':
+          return { provider: 'anthropic', apiKey: userConfig.apiKey, model: userConfig.model || 'claude-sonnet-4-20250514' };
+        case 'google':
+          return { provider: 'google', apiKey: userConfig.apiKey, model: userConfig.model || 'gemini-2.0-flash' };
       }
-      return { provider: 'none' };
+    }
+  } catch {
+    // No settings available
   }
+  return UNCONFIGURED_AI;
 }
 
-export const aiConfig: AIConfig = buildAIConfig();
-export const imageConfig: ImageConfig = buildImageConfig();
+/**
+ * Resolve the effective image config at runtime from user settings.
+ */
+export async function resolveImageConfig(): Promise<ImageConfig> {
+  try {
+    const userConfig = await getEffectiveImageConfig();
+    if (userConfig) {
+      switch (userConfig.provider) {
+        case 'azure-openai':
+          return {
+            provider: 'azure-openai',
+            endpoint: userConfig.endpoint || '',
+            apiKey: userConfig.apiKey!,
+            deployment: userConfig.deployment || 'gpt-image-1',
+            apiVersion: userConfig.apiVersion || '2024-10-21',
+          };
+        case 'openai':
+          return { provider: 'openai', apiKey: userConfig.apiKey!, model: userConfig.model || 'gpt-image-1' };
+        case 'google':
+          return { provider: 'google', apiKey: userConfig.apiKey!, model: userConfig.model || 'gemini-2.5-flash-image' };
+        default:
+          break;
+      }
+    }
+  } catch {
+    // No settings available
+  }
+  return UNCONFIGURED_IMAGE;
+}
 
-export function isAIConfigured(): boolean {
-  switch (aiConfig.provider) {
+/**
+ * Resolve the effective cloud API URL from user settings.
+ */
+export async function resolveCloudUrl(): Promise<string> {
+  try {
+    const userUrl = await getEffectiveCloudUrl();
+    if (userUrl) return userUrl;
+  } catch {
+    // No settings available
+  }
+  return '';
+}
+
+/**
+ * Check if AI is configured (from user settings)
+ */
+export async function isAIConfiguredAsync(): Promise<boolean> {
+  const config = await resolveAIConfig();
+  switch (config.provider) {
     case 'azure-openai':
-      return !!(aiConfig.endpoint && aiConfig.apiKey);
+      return !!(config.endpoint && config.apiKey);
     case 'openai':
     case 'anthropic':
     case 'google':
-      return !!aiConfig.apiKey;
+      return !!config.apiKey;
   }
 }
 
-export function isImageConfigured(): boolean {
-  switch (imageConfig.provider) {
+/**
+ * Check if image generation is configured (from user settings)
+ */
+export async function isImageConfiguredAsync(): Promise<boolean> {
+  const config = await resolveImageConfig();
+  switch (config.provider) {
     case 'azure-openai':
-      return !!(imageConfig.endpoint && imageConfig.apiKey);
+      return !!(config.endpoint && config.apiKey);
     case 'openai':
     case 'google':
-      return !!imageConfig.apiKey;
+      return !!config.apiKey;
     case 'none':
       return false;
   }
 }
 
-/** Human-readable name for the active AI provider */
-export function getProviderName(): string {
-  switch (aiConfig.provider) {
-    case 'azure-openai': return 'Azure OpenAI';
-    case 'openai': return 'OpenAI';
-    case 'anthropic': return 'Anthropic Claude';
-    case 'google': return 'Google Gemini';
-  }
+/**
+ * Check if cloud queue is configured (from user settings)
+ */
+export async function isCloudConfiguredAsync(): Promise<boolean> {
+  const url = await resolveCloudUrl();
+  return !!url;
 }

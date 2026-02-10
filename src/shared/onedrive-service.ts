@@ -409,3 +409,57 @@ async function uploadLargeFile(
     offset = end;
   }
 }
+
+// ─── Settings Sync ────────────────
+
+const SETTINGS_FILE = 'settings.enc.json';
+
+/**
+ * Upload encrypted settings to OneDrive.
+ * Stored at /drive/special/approot/settings.enc.json (outside the articles folder).
+ */
+export async function uploadSettings(encryptedJson: string): Promise<void> {
+  const headers = await authHeaders();
+
+  const res = await fetch(
+    `${GRAPH_BASE}/me/drive/special/approot:/${SETTINGS_FILE}:/content`,
+    {
+      method: 'PUT',
+      headers: {
+        ...headers,
+        'Content-Type': 'application/json',
+      },
+      body: encryptedJson,
+    }
+  );
+
+  if (!res.ok) {
+    throw new Error(`Upload settings failed (${res.status}): ${res.statusText}`);
+  }
+
+  console.log('[OneDrive] Settings uploaded');
+}
+
+/**
+ * Download encrypted settings from OneDrive.
+ * Returns null if the file doesn't exist.
+ */
+export async function downloadSettings(): Promise<string | null> {
+  const headers = await authHeaders();
+
+  const res = await fetch(
+    `${GRAPH_BASE}/me/drive/special/approot:/${SETTINGS_FILE}:/content`,
+    { headers }
+  );
+
+  if (res.status === 404) {
+    console.log('[OneDrive] No settings file found in cloud');
+    return null;
+  }
+
+  if (!res.ok) {
+    throw new Error(`Download settings failed (${res.status}): ${res.statusText}`);
+  }
+
+  return res.text();
+}
