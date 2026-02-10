@@ -27,6 +27,9 @@ interface SharedLinkEntity extends TableEntity {
   userId: string;
   createdAt: number;
   expiresAt?: number;
+  description?: string;
+  originalUrl?: string;
+  image?: string;
 }
 
 export interface SharedLinkRecord {
@@ -36,6 +39,9 @@ export interface SharedLinkRecord {
   userId: string;
   createdAt: number;
   expiresAt?: number;
+  description?: string;
+  originalUrl?: string;
+  image?: string;
 }
 
 let tableClient: TableClient | null = null;
@@ -64,6 +70,7 @@ export async function createShortLink(
   title: string,
   userId: string,
   expiresAt?: number,
+  meta?: { description?: string; originalUrl?: string; image?: string },
 ): Promise<string> {
   const client = getTableClient();
   await client.createTable(); // no-op if exists
@@ -78,6 +85,9 @@ export async function createShortLink(
     userId,
     createdAt: Date.now(),
     ...(expiresAt ? { expiresAt } : {}),
+    ...(meta?.description ? { description: meta.description } : {}),
+    ...(meta?.originalUrl ? { originalUrl: meta.originalUrl } : {}),
+    ...(meta?.image ? { image: meta.image } : {}),
   };
 
   await client.createEntity(entity);
@@ -90,7 +100,7 @@ export async function createShortLink(
  */
 export async function resolveShortLink(
   shortCode: string,
-): Promise<{ blobUrl: string; title: string } | null> {
+): Promise<SharedLinkRecord | null> {
   const client = getTableClient();
 
   try {
@@ -104,8 +114,15 @@ export async function resolveShortLink(
     }
 
     return {
+      shortCode,
       blobUrl: entity.blobUrl as string,
       title: entity.title as string,
+      userId: entity.userId as string,
+      createdAt: entity.createdAt as number,
+      ...(entity.expiresAt ? { expiresAt: entity.expiresAt as number } : {}),
+      ...(entity.description ? { description: entity.description as string } : {}),
+      ...(entity.originalUrl ? { originalUrl: entity.originalUrl as string } : {}),
+      ...(entity.image ? { image: entity.image as string } : {}),
     };
   } catch (err: unknown) {
     // 404 = not found

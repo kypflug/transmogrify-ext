@@ -6,6 +6,7 @@ All notable changes to Transmogrifier will be documented in this file.
 
 ### Fixed
 - **Long-string overflow in complex layouts** — Recipe prompts now instruct the LLM to include a global `*, *::before, *::after { min-width: 0; }` reset. Flex/grid children default to `min-width: auto`, which prevents text from shrinking below its intrinsic width — the #1 cause of long URLs, code snippets, and technical terms breaking out of containers in Visualize, Aesthetic, and other multi-column layouts. Also added `word-break: break-word` alongside `overflow-wrap` for broader coverage. Updated in both extension and cloud recipe prompts.
+- **Share metadata not persisted** — `POST /api/share` now stores `description`, `originalUrl`, and `image` in Table Storage and `GET /api/s/{code}` returns them. Previously these fields were sent by the client but dropped, breaking the shared viewer's 🌐 globe button and social media preview cards.
 
 ## [0.5.3] - 2026-02-10
 

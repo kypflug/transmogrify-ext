@@ -53,6 +53,9 @@ async function handleResolve(request: HttpRequest, _context: InvocationContext):
       jsonBody: {
         url: result.blobUrl,
         title: result.title,
+        ...(result.description ? { description: result.description } : {}),
+        ...(result.originalUrl ? { originalUrl: result.originalUrl } : {}),
+        ...(result.image ? { image: result.image } : {}),
       },
     };
   } catch (err) {

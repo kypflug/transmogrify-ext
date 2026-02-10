@@ -43,6 +43,9 @@ interface ShareRequest {
   title: string;
   accessToken: string;
   expiresAt?: number;
+  description?: string;
+  originalUrl?: string;
+  image?: string;
 }
 
 async function handleCreateShare(
@@ -93,6 +96,7 @@ async function handleCreateShare(
       body.title,
       tokenResult.userId,
       body.expiresAt,
+      { description: body.description, originalUrl: body.originalUrl, image: body.image },
     );
 
     context.log(`Created share link ${shortCode} for user ${tokenResult.userId}`);
