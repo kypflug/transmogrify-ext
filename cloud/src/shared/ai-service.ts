@@ -201,7 +201,13 @@ function parseAIResponse(raw: string): AIResponse {
   try {
     const parsed = JSON.parse(raw);
     if (parsed.html) {
-      return { html: parsed.html, explanation: parsed.explanation };
+      // Fix any literal \n sequences that should be actual newlines
+      // (AI sometimes double-escapes when producing JSON)
+      const html = parsed.html
+        .replace(/\\n/g, '\n')
+        .replace(/\\t/g, '\t')
+        .replace(/\\"/g, '"');
+      return { html, explanation: parsed.explanation };
     }
   } catch {
     // Not valid JSON — try to extract JSON from markdown code blocks
@@ -213,7 +219,11 @@ function parseAIResponse(raw: string): AIResponse {
     try {
       const parsed = JSON.parse(jsonMatch[1]);
       if (parsed.html) {
-        return { html: parsed.html, explanation: parsed.explanation };
+        const html = parsed.html
+          .replace(/\\n/g, '\n')
+          .replace(/\\t/g, '\t')
+          .replace(/\\"/g, '"');
+        return { html, explanation: parsed.explanation };
       }
     } catch {
       // Fall through
