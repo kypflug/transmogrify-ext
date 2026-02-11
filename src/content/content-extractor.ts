@@ -225,7 +225,7 @@ function findMainContent(): Element | null {
 
 function isHiddenOrSkipped(el: HTMLElement): boolean {
   const tag = el.tagName.toLowerCase();
-  const skipTags = ['script', 'style', 'noscript', 'svg', 'nav', 'header', 'footer', 'aside', 'form', 'input', 'button', 'iframe'];
+  const skipTags = ['script', 'style', 'noscript', 'nav', 'header', 'footer', 'aside', 'form', 'input', 'button'];
   if (skipTags.includes(tag)) return true;
 
   // Skip common ad/social/nav patterns (cheap string checks first)
@@ -401,12 +401,69 @@ function elementToBlock(el: HTMLElement, processed: Set<Element>): ContentBlock 
   // Videos
   if (tag === 'video') {
     const video = el as HTMLVideoElement;
+    const src = video.src || video.querySelector('source')?.src;
+    if (src) {
+      processed.add(el);
+      el.querySelectorAll('*').forEach(child => processed.add(child));
+      return {
+        type: 'video',
+        content: '',
+        src,
+      };
+    }
+  }
+
+  // Audio
+  if (tag === 'audio') {
+    const audio = el as HTMLAudioElement;
+    const src = audio.src || audio.querySelector('source')?.src;
+    if (src) {
+      processed.add(el);
+      el.querySelectorAll('*').forEach(child => processed.add(child));
+      return {
+        type: 'embed',
+        content: `<audio controls src="${src}"></audio>`,
+        src,
+      };
+    }
+  }
+
+  // Inline SVGs (diagrams, animations, visualizations)
+  if (tag === 'svg') {
+    // Only preserve SVGs that are substantial (not tiny icons)
+    const width = el.getAttribute('width') || el.getAttribute('viewBox')?.split(' ')[2];
+    const height = el.getAttribute('height') || el.getAttribute('viewBox')?.split(' ')[3];
+    const w = parseFloat(width || '0');
+    const h = parseFloat(height || '0');
+    if (w > 50 && h > 50) {
+      processed.add(el);
+      el.querySelectorAll('*').forEach(child => processed.add(child));
+      return {
+        type: 'embed',
+        content: el.outerHTML,
+      };
+    }
+    // Small SVGs (icons) — skip silently
     processed.add(el);
-    return {
-      type: 'video',
-      content: '',
-      src: video.src || video.querySelector('source')?.src,
-    };
+    el.querySelectorAll('*').forEach(child => processed.add(child));
+    return null;
+  }
+
+  // Iframes (YouTube, Vimeo, CodePen, etc.)
+  if (tag === 'iframe') {
+    const iframe = el as HTMLIFrameElement;
+    const src = iframe.src;
+    if (src && isContentIframe(src)) {
+      processed.add(el);
+      return {
+        type: 'embed',
+        content: `<iframe src="${src}" allowfullscreen loading="lazy"></iframe>`,
+        src,
+      };
+    }
+    // Non-content iframes (ads, trackers) — skip
+    processed.add(el);
+    return null;
   }
 
   // Div/span/section acting as a paragraph (has direct text, no block-level children)
@@ -467,6 +524,49 @@ function findCaption(img: HTMLElement): string | undefined {
   }
   
   return undefined;
+}
+
+/**
+ * Check whether an iframe src is content (video, demo, interactive)
+ * vs non-content (ads, trackers, social widgets, etc.)
+ */
+function isContentIframe(src: string): boolean {
+  const contentDomains = [
+    'youtube.com', 'youtube-nocookie.com', 'youtu.be',
+    'vimeo.com', 'player.vimeo.com',
+    'dailymotion.com',
+    'codepen.io',
+    'jsfiddle.net',
+    'codesandbox.io', 'stackblitz.com',
+    'observable.com', 'observablehq.com',
+    'glitch.com',
+    'replit.com',
+    'figma.com',
+    'docs.google.com', 'drive.google.com',
+    'google.com/maps', 'maps.google.com',
+    'openstreetmap.org',
+    'soundcloud.com',
+    'spotify.com',
+    'bandcamp.com',
+    'archive.org',
+    'ted.com',
+    'loom.com',
+    'wistia.com', 'fast.wistia.net',
+    'twitch.tv', 'player.twitch.tv',
+    'streamable.com',
+    'giphy.com',
+    'datawrapper.dwcdn.net',
+    'flourish.studio', 'flo.uri.sh',
+    'tableau.com',
+    'd3js.org',
+  ];
+
+  try {
+    const url = new URL(src);
+    return contentDomains.some(domain => url.hostname.includes(domain));
+  } catch {
+    return false;
+  }
 }
 
 function detectCodeLanguage(el: HTMLElement): string | undefined {
@@ -613,6 +713,18 @@ export function serializeContent(content: ExtractedContent): string {
         break;
       case 'divider':
         lines.push('---', '');
+        break;
+      case 'video':
+        if (block.src) {
+          lines.push(`[Video](${block.src})`, '');
+        }
+        break;
+      case 'embed':
+        if (block.content) {
+          lines.push(block.content, '');
+        } else if (block.src) {
+          lines.push(`[Embedded content](${block.src})`, '');
+        }
         break;
     }
   }

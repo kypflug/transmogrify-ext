@@ -2,10 +2,9 @@
 
 All notable changes to Transmogrifier will be documented in this file.
 
-## [0.5.5] - 2026-02-10
+## [Unreleased]
 
 ### Added
-- **Auto-import settings on new device** — When signing in on a device with no local settings, the extension automatically pulls existing settings from OneDrive. Existing settings are never overwritten.
 - **Gift token redemption** — Settings screen has a "Gift Token" section where users can enter a passphrase from a friend to import preconfigured AI/cloud/sharing settings. Same flow as the PWA.
 
 ## [0.5.4] - 2026-02-10
