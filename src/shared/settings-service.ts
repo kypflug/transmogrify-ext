@@ -292,6 +292,43 @@ export async function importEncryptedEnvelope(
   return true;
 }
 
+// ─── Auto-import on new device ────────────────
+
+/**
+ * If local settings are blank (never configured), attempt to pull from
+ * OneDrive.  Call once after sign-in so a user on a new device inherits
+ * their cloud settings automatically.  Existing settings are never
+ * overwritten.
+ *
+ * @param downloadSettingsFn  Injected from onedrive-service to avoid circular deps.
+ * @returns `true` if settings were imported.
+ */
+export async function tryAutoImportSettingsFromCloud(
+  downloadSettingsFn: () => Promise<string | null>,
+): Promise<boolean> {
+  const local = await loadSettings();
+  if (local.updatedAt !== 0) {
+    // User already has settings on this device — leave them alone
+    return false;
+  }
+
+  try {
+    const json = await downloadSettingsFn();
+    if (!json) return false;
+
+    const data = JSON.parse(json) as { envelope: SyncEncryptedEnvelope | LegacyEncryptedEnvelope; updatedAt: number };
+    const imported = await importEncryptedEnvelope(data.envelope, data.updatedAt);
+    if (imported) {
+      console.log('[Settings] Auto-imported settings from OneDrive (new device)');
+    }
+    return imported;
+  } catch (err) {
+    // Non-fatal — the user can still configure manually
+    console.warn('[Settings] Auto-import from cloud failed:', err);
+    return false;
+  }
+}
+
 // ─── Config resolution (from encrypted user settings) ────────────────
 
 /**

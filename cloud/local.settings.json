@@ -1,0 +1,12 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+
+    "MSAL_CLIENT_ID": "4b54bcee-1c83-4f52-9faf-d0dfd89c5ac2"
+  },
+  "Host": {
+    "CORS": "https://transmogrifia.app,http://localhost:5173"
+  }
+}

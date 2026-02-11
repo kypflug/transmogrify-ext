@@ -34,7 +34,7 @@ import {
   setupSyncAlarm,
 } from '../shared/sync-service';
 import { uploadSettings, downloadSettings } from '../shared/onedrive-service';
-import { getEncryptedEnvelopeForSync, importEncryptedEnvelope, invalidateCache as invalidateSettingsCache } from '../shared/settings-service';
+import { getEncryptedEnvelopeForSync, importEncryptedEnvelope, invalidateCache as invalidateSettingsCache, tryAutoImportSettingsFromCloud } from '../shared/settings-service';
 import { shareArticle, unshareArticle } from '../shared/blob-storage-service';
 
 // In-memory storage for AbortControllers (per request)
@@ -497,6 +497,10 @@ async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
         await signIn();
         // Do an initial pull after sign-in
         pullFromCloud().catch(err => console.error('[Sync] Initial pull failed:', err));
+        // On a new device with no settings, silently pull from OneDrive
+        tryAutoImportSettingsFromCloud(downloadSettings).catch(err =>
+          console.warn('[Sync] Auto-import settings failed:', err)
+        );
         const userInfo = await getUserInfo();
         const syncState = await getSyncState();
         return {
