@@ -2,7 +2,7 @@
  * Shared types for Transmogrifier extension
  */
 
-import { AIResponse } from './recipes';
+import type { AIResponse } from '@kypflug/transmogrifier-core';
 
 /** Available remix modes - now recipe-based */
 export type RemixMode = 'off' | 'ai';
@@ -15,16 +15,6 @@ export interface UserPreferences {
   readerSettings: ReaderSettings;
   enabledSites: string[];
   disabledSites: string[];
-}
-
-/** Settings for Focus Mode */
-export interface FocusSettings {
-  hideAds: boolean;
-  hideSidebars: boolean;
-  hideFooters: boolean;
-  hideComments: boolean;
-  dimBackground: boolean;
-  centerContent: boolean;
 }
 
 /** Settings for Reader Mode */
@@ -63,7 +53,6 @@ export interface RemixMessage {
     | 'SYNC_STATUS'
     | 'SYNC_NOW'
     | 'SYNC_DOWNLOAD_ARTICLE'
-    | 'CLOUD_QUEUE'
     | 'SETTINGS_PUSH'
     | 'SETTINGS_PULL'
     | 'SHARE_ARTICLE'
@@ -120,11 +109,6 @@ export interface RemixResponse {
     isSyncing: boolean;
     lastError?: string;
   };
-  // Cloud queue fields
-  cloudQueue?: {
-    jobId: string;
-    message: string;
-  };
   // Share fields
   shareResult?: {
     shareUrl: string;
@@ -134,7 +118,7 @@ export interface RemixResponse {
 }
 
 /** Status of a remix operation */
-export type RemixStatus = 'idle' | 'extracting' | 'analyzing' | 'generating-images' | 'saving' | 'complete' | 'error' | 'cloud-queued';
+export type RemixStatus = 'idle' | 'extracting' | 'analyzing' | 'generating-images' | 'saving' | 'complete' | 'error';
 
 /** A single remix request for parallel tracking */
 export interface RemixRequest {
@@ -148,8 +132,6 @@ export interface RemixRequest {
   error?: string;
   articleId?: string;
   warning?: string; // Set when remix is taking unusually long
-  cloudJobId?: string; // For cloud-queued jobs
-  sourceUrl?: string; // URL being processed (for cloud jobs)
 }
 
 /** Progress state for resilient operations */
@@ -167,7 +149,7 @@ export interface RemixProgressState {
 /** Default preferences */
 export const DEFAULT_PREFERENCES: UserPreferences = {
   mode: 'off',
-  selectedRecipe: 'focus',
+  selectedRecipe: 'reader',
   customPrompt: '',
   readerSettings: {
     fontFamily: 'Georgia, serif',

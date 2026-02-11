@@ -15,7 +15,7 @@ import {
   type SavedArticle,
 } from '../shared/storage-service';
 import { getMergedArticleList } from '../shared/sync-service';
-import { BUILT_IN_RECIPES } from '../shared/recipes';
+import { BUILT_IN_RECIPES } from '@kypflug/transmogrifier-core';
 import type { RemixRequest } from '../shared/types';
 
 // ─── State ───────────────────────────────────────────
@@ -24,7 +24,7 @@ let filteredArticles: (ArticleSummary & { cloudOnly?: boolean })[] = [];
 let selectedArticleId: string | null = null;
 let currentArticle: SavedArticle | null = null;
 let focusedIndex = -1;
-let selectedRecipeId = 'focus';
+let selectedRecipeId = 'reader';
 let activeRemixes: RemixRequest[] = [];
 let selectedPendingId: string | null = null;
 

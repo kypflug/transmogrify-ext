@@ -5,12 +5,11 @@
  */
 
 import { RemixMessage, RemixRequest } from '../shared/types';
-import { BUILT_IN_RECIPES } from '../shared/recipes';
+import { BUILT_IN_RECIPES } from '@kypflug/transmogrifier-core';
 import { isAIConfiguredAsync, isImageConfiguredAsync } from '../shared/config';
-import { isCloudQueueConfiguredAsync } from '../shared/cloud-queue-service';
 
 // State
-let selectedRecipeId = 'focus';
+let selectedRecipeId = 'reader';
 let pinnedRecipeIds: string[] = [];
 let pollingIntervalId: ReturnType<typeof setInterval> | null = null;
 
@@ -69,9 +68,6 @@ async function init() {
     elements.imageToggleSection.style.display = 'none';
   }
 
-  // Show cloud queue button if configured and signed in
-  await updateCloudQueueVisibility();
-
   // Load pinned recipes from storage
   await loadPinnedRecipes();
 
@@ -114,7 +110,6 @@ async function loadActiveRemixes() {
       const elapsed = Math.round((Date.now() - remix.startTime) / 1000);
       const elapsedStr = elapsed > 0 ? ` (${elapsed}s)` : '';
       const statusClass = remix.status === 'complete' ? 'complete' : remix.status === 'error' ? 'error' : '';
-      const isCloud = remix.status === 'cloud-queued';
       const isFinished = ['complete', 'error'].includes(remix.status);
       const showCancel = !isFinished;
       const showDismiss = isFinished;
@@ -130,7 +125,7 @@ async function loadActiveRemixes() {
             ${hasError ? `<div class="active-remix-error">${escapeHtml(remix.error!)}</div>` : ''}
             ${hasWarning ? `<div class="active-remix-warning">⚠ ${escapeHtml(remix.warning!)}</div>` : ''}
           </div>
-          ${showCancel ? `<button class="active-remix-cancel" data-action="cancel" title="${isCloud ? 'Dismiss' : 'Cancel'}">✕</button>` : ''}
+          ${showCancel ? `<button class="active-remix-cancel" data-action="cancel" title="Cancel">✕</button>` : ''}
           ${showDismiss ? `<button class="active-remix-cancel" data-action="dismiss" title="Dismiss">✕</button>` : ''}
         </div>
       `;
@@ -336,7 +331,7 @@ function setupEventListeners() {
   
   // Remix buttons
   elements.remixReadBtn.addEventListener('click', () => applyRemix('library'));
-  elements.remixSendBtn.addEventListener('click', () => sendOrFallback());
+  elements.remixSendBtn.addEventListener('click', () => applyRemix('none'));
   
   // Active remixes list - cancel/dismiss buttons
   activeRemixesList.addEventListener('click', (e) => {
@@ -445,93 +440,6 @@ function showError(message: string) {
     elements.statusIndicator.textContent = 'Ready';
     elements.statusIndicator.classList.remove('error');
   }, 5000);
-}
-
-/**
- * Update the send button label based on cloud availability
- */
-async function updateCloudQueueVisibility() {
-  const cloudReady = await isCloudQueueConfiguredAsync();
-  if (!cloudReady) {
-    // No cloud configured — fall back to local label
-    elements.remixSendBtn.querySelector('.btn-text')!.textContent = '📥 Send to Library';
-    elements.remixSendBtn.title = 'Start transmogrification without navigating';
-    return;
-  }
-  try {
-    const syncStatus = await chrome.runtime.sendMessage({ type: 'SYNC_STATUS' });
-    if (syncStatus?.success && syncStatus.syncStatus?.signedIn) {
-      elements.remixSendBtn.querySelector('.btn-text')!.textContent = '☁️ Send to Cloud';
-      elements.remixSendBtn.title = 'Queue for cloud processing — no need to keep the browser open';
-    } else {
-      elements.remixSendBtn.querySelector('.btn-text')!.textContent = '📥 Send to Library';
-      elements.remixSendBtn.title = 'Start transmogrification without navigating (sign in for cloud)';
-    }
-  } catch {
-    elements.remixSendBtn.querySelector('.btn-text')!.textContent = '📥 Send to Library';
-  }
-}
-
-/**
- * Send to cloud if available, otherwise fall back to local processing
- */
-async function sendOrFallback() {
-  // Check if cloud is available
-  let useCloud = false;
-  const cloudReady = await isCloudQueueConfiguredAsync();
-  if (cloudReady) {
-    try {
-      const syncStatus = await chrome.runtime.sendMessage({ type: 'SYNC_STATUS' });
-      useCloud = syncStatus?.success && syncStatus.syncStatus?.signedIn;
-    } catch { /* fall back to local */ }
-  }
-
-  if (useCloud) {
-    await sendToCloud();
-  } else {
-    await applyRemix('none');
-  }
-}
-
-/**
- * Send the current page URL to the cloud for async transmogrification
- */
-async function sendToCloud() {
-  const btn = elements.remixSendBtn;
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.url) {
-      showError('No URL available for this tab');
-      return;
-    }
-
-    btn.setAttribute('disabled', 'true');
-    btn.querySelector('.btn-text')!.textContent = '☁️ Queuing...';
-
-    const message: RemixMessage = {
-      type: 'CLOUD_QUEUE',
-      payload: {
-        url: tab.url,
-        recipeId: selectedRecipeId,
-        customPrompt: selectedRecipeId === 'custom' ? elements.customPrompt.value : undefined,
-      },
-    };
-
-    const response = await chrome.runtime.sendMessage(message);
-
-    if (response?.success) {
-      btn.querySelector('.btn-text')!.textContent = '✓ Queued!';
-      setTimeout(() => window.close(), 1200);
-    } else {
-      showError(response?.error || 'Failed to queue for cloud processing');
-      btn.removeAttribute('disabled');
-      btn.querySelector('.btn-text')!.textContent = '☁️ Send to Cloud';
-    }
-  } catch (error) {
-    showError(String(error).replace('Error: ', ''));
-    btn.removeAttribute('disabled');
-    btn.querySelector('.btn-text')!.textContent = '☁️ Send to Cloud';
-  }
 }
 
 // Initialize when DOM is ready

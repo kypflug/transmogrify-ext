@@ -23,34 +23,6 @@
     <!-- Scrollable content -->
     <main class="settings-content">
 
-      <!-- Sync Passphrase Section -->
-      <section class="settings-section" id="passphraseSection">
-        <div class="section-header">
-          <h2>🔐 Sync Passphrase</h2>
-          <span class="section-badge" id="passphraseBadge">Not set</span>
-        </div>
-        <p class="section-desc">
-          Your API keys are encrypted locally on this device automatically.
-          To sync settings across devices via OneDrive, set a passphrase here.
-          Use the same passphrase on all your devices.
-        </p>
-        <div class="field-row">
-          <label for="passphrase">Passphrase</label>
-          <div class="input-with-action">
-            <input type="password" id="passphrase" placeholder="Enter a strong passphrase…" autocomplete="off">
-            <button class="input-action-btn" id="togglePassphraseVisibility" title="Show/hide">👁️</button>
-          </div>
-        </div>
-        <div class="field-row">
-          <label for="passphraseConfirm">Confirm Passphrase</label>
-          <input type="password" id="passphraseConfirm" placeholder="Confirm passphrase…" autocomplete="off">
-        </div>
-        <div class="field-actions">
-          <button class="btn btn-primary" id="setPassphraseBtn">Set Passphrase</button>
-          <span class="field-error hidden" id="passphraseError"></span>
-        </div>
-      </section>
-
       <!-- AI Provider Section -->
       <section class="settings-section" id="aiSection">
         <div class="section-header">
@@ -244,8 +216,8 @@
           <span class="section-badge" id="syncBadge">Local only</span>
         </div>
         <p class="section-desc">
-          Sync your encrypted settings to OneDrive so they're available on all your devices. 
-          Requires signing in and setting an encryption passphrase.
+          Sync your encrypted settings to OneDrive so they're available on all your devices.
+          Requires signing in to your Microsoft account.
         </p>
 
         <div class="sync-actions">

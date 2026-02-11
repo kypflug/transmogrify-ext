@@ -6,7 +6,7 @@ Transmogrifier is a Microsoft Edge extension (Manifest V3) that transforms web p
 **Key Features**:
 - Complete HTML generation (not DOM mutation)
 - BYOK (Bring Your Own Key) — all API keys configured via in-extension Settings UI
-- AES-256-GCM encrypted key storage with PBKDF2 key derivation (600k iterations)
+- AES-256-GCM encrypted key storage with HKDF identity-derived keys for sync
 - Encrypted settings sync to OneDrive for cross-device key portability
 - IndexedDB storage for saved articles
 - Full Library page for browsing, reading, and managing articles
@@ -20,6 +20,25 @@ Transmogrifier is a Microsoft Edge extension (Manifest V3) that transforms web p
 - Dark mode support (`prefers-color-scheme`)
 
 ## Architecture Overview
+
+### Multi-Repo Architecture
+
+The Transmogrifier ecosystem spans three repos plus a shared core package:
+
+| Repo | Purpose |
+|------|---------|  
+| **transmogrify-ext** (this repo) | Edge extension — content extraction, local AI processing, storage, sync |
+| [kypflug/transmogrifier-api](https://github.com/kypflug/transmogrifier-api) | Azure Functions backend — cloud queue processing, sharing/short links |
+| [kypflug/transmogrifia-pwa](https://github.com/kypflug/transmogrifia-pwa) | Read-only PWA for browsing articles on any device |
+| [kypflug/transmogrifier-core](https://github.com/kypflug/transmogrifier-core) | Shared npm package — recipes, AI/image provider calls, types |
+
+**`@kypflug/transmogrifier-core`** is the single source of truth for:
+- **Recipes**: All 6 built-in recipe definitions, prompt builder, response format constants
+- **AI provider calls**: `callAzureOpenAI`, `callOpenAI`, `callAnthropic`, `callGoogle`, `parseAIResponse`
+- **Image provider calls**: `generateAzureImage`, `generateOpenAIImage`, `generateGoogleImage`, `replaceImagePlaceholders`
+- **Shared types**: `OneDriveArticleMeta`, `TransmogrifierSettings`, provider config unions, etc.
+
+Published to GitHub Packages. All three consumer repos import from it.
 
 ### Companion PWA
 
@@ -35,7 +54,7 @@ Transmogrifier is a Microsoft Edge extension (Manifest V3) that transforms web p
 
 | Shared surface | Extension file | PWA file |
 |----------------|----------------|----------|
-| `OneDriveArticleMeta` interface | `src/shared/onedrive-service.ts` | `src/types.ts` |
+| `OneDriveArticleMeta` interface | `@kypflug/transmogrifier-core` (canonical) | `src/types.ts` (re-exports from core) |
 | OneDrive folder path (`articles/`) | `src/shared/onedrive-service.ts` (`APP_FOLDER`) | `src/services/graph.ts` (`APP_FOLDER`) |
 | Graph API endpoints & auth | `src/shared/onedrive-service.ts` | `src/services/graph.ts` |
 | Article ID format | `src/shared/storage-service.ts` (`generateId`) | N/A (read-only, consumes IDs) |
@@ -83,19 +102,17 @@ The PWA also uses delta sync, filters `.json` client-side (no `$filter`), and ca
 |------|---------|
 | `src/content/content-extractor.ts` | Extracts semantic content from pages |
 | `src/content/index.ts` | Content script message handling |
-| `src/shared/ai-service.ts` | Multi-provider AI integration (Azure OpenAI / OpenAI / Anthropic / Google) |
-| `src/shared/image-service.ts` | Image generation (Azure OpenAI / OpenAI / Google Gemini) |
-| `src/shared/config.ts` | Provider types & runtime config resolution from Settings |
-| `src/shared/crypto-service.ts` | AES-256-GCM encryption (device key + passphrase modes) |
+| `src/shared/ai-service.ts` | AI orchestrator — resolves config, calls core provider functions |
+| `src/shared/image-service.ts` | Image orchestrator — resolves config, calls core provider functions |
+| `src/shared/config.ts` | Provider types (re-exported from core) & runtime config resolution |
+| `src/shared/crypto-service.ts` | AES-256-GCM encryption (device key + identity key modes) |
 | `src/shared/device-key.ts` | Per-device non-extractable CryptoKey generation & storage |
-| `src/shared/settings-service.ts` | Settings CRUD, sync passphrase, encrypted sync |
+| `src/shared/settings-service.ts` | Settings CRUD, identity-key sync, encrypted sync |
 | `src/shared/blob-storage-service.ts` | BYOS blob upload + short link registration |
-| `src/shared/cloud-queue-service.ts` | Cloud function queue client (always sends user's keys) |
 | `src/shared/storage-service.ts` | IndexedDB article storage (TransmogrifierDB) |
 | `src/shared/auth-service.ts` | Microsoft OAuth2 PKCE authentication |
 | `src/shared/onedrive-service.ts` | OneDrive Graph API client |
 | `src/shared/sync-service.ts` | Bidirectional sync orchestrator |
-| `src/shared/recipes.ts` | Built-in prompts and response format |
 | `src/settings/settings.ts` | Settings UI page logic |
 | `src/popup/popup.ts` | Recipe picker + split action buttons (no tabs) |
 | `src/library/library.ts` | Full two-pane article browser |
@@ -125,13 +142,11 @@ AbortControllers stored in memory for cancel support.
 
 ## Recipe System
 
-Built-in recipes in `recipes.ts`:
-- **Focus** - Clean, distraction-free reading
-- **Reader** - Article-optimized editorial typography
+Built-in recipes defined in `@kypflug/transmogrifier-core` (`src/recipes.ts`):
+- **Reader** - Article-optimized editorial typography (default)
 - **Aesthetic** - Bold, artistic presentation
-- **Illustrated** - Add 5-10 AI-generated illustrations
+- **Illustrated** - Add AI-generated illustrations
 - **Visualize** - Generate diagrams and infographics
-- **Declutter** - Ultra-lightweight brutalist version
 - **Interview** - Chat bubble formatting for Q&A
 - **Custom** - User writes their own prompt
 
@@ -143,7 +158,7 @@ All recipes enforce:
 
 ### Adding a New Recipe
 ```typescript
-// In src/shared/recipes.ts
+// In @kypflug/transmogrifier-core src/recipes.ts (BUILT_IN_RECIPES array)
 {
   id: 'myrecipe',
   name: 'My Recipe',
@@ -285,10 +300,12 @@ User enters keys in Settings UI
   → No passphrase needed for day-to-day use
 
 For OneDrive sync:
-  → User sets a sync passphrase (once per device)
-  → Settings re-encrypted with PBKDF2 + AES-256-GCM for cloud storage
-  → Uploaded to /drive/special/approot/settings.enc.json
-  → New device: enter same passphrase → decrypt cloud → re-encrypt with local device key
+  → Identity key derived from Microsoft user ID via HKDF-SHA256
+  → Fixed salt: "transmogrifier-settings-v2", info: "settings-encryption"
+  → Deterministic: same user ID = same key on any device (no passphrase needed)
+  → Settings encrypted with identity key, uploaded to /drive/special/approot/settings.enc.json
+  → New device: sign in with same account → same key derived → decrypt cloud → re-encrypt with local device key
+  → Legacy v1 passphrase envelopes (PBKDF2 600k) supported for one-time migration
 ```
 
 ### Key Types
@@ -307,8 +324,16 @@ interface LocalEncryptedEnvelope {
   data: string;  // base64 ciphertext
 }
 
-// Cloud sync (passphrase)
-interface EncryptedEnvelope {
+// Cloud sync (identity key, v2)
+interface SyncEncryptedEnvelope {
+  v: 2;
+  iv: string;    // base64 (12 bytes)
+  data: string;  // base64 ciphertext
+  // No salt — HKDF parameters are fixed
+}
+
+// Legacy cloud sync (passphrase, v1 — migration only)
+interface LegacyEncryptedEnvelope {
   v: 1;
   salt: string;  // base64 (16 bytes, PBKDF2)
   iv: string;    // base64 (12 bytes)
@@ -318,10 +343,11 @@ interface EncryptedEnvelope {
 
 ### Crypto Parameters
 - **Local encryption**: AES-256-GCM with non-extractable `CryptoKey` stored in IndexedDB (`TransmogrifierKeyStore`)
-- **Cloud sync encryption**: AES-256-GCM with PBKDF2-SHA256, 600,000 iterations
+- **Cloud sync encryption**: AES-256-GCM with HKDF-SHA256 identity-derived key from Microsoft user ID
+- **HKDF salt**: Fixed `"transmogrifier-settings-v2"` (UTF-8 encoded)
+- **HKDF info**: Fixed `"settings-encryption"` (UTF-8 encoded)
 - **IV**: 12 bytes, cryptographically random, fresh per encryption
-- **Salt** (PBKDF2 only): 16 bytes, cryptographically random, fresh per encryption
-- **Sync passphrase**: held in `chrome.storage.session` (memory-only, survives SW restarts, cleared on browser close)
+- **Legacy migration**: v1 envelopes use PBKDF2-SHA256, 600,000 iterations — supported for one-time migration
 
 ## API Notes
 - OpenAI / Azure OpenAI use `max_completion_tokens`; Anthropic uses `max_tokens`; Google uses `maxOutputTokens`
@@ -333,28 +359,29 @@ interface EncryptedEnvelope {
 
 ## Cloud Functions (Azure)
 
-The cloud backend (`cloud/`) processes transmogrification jobs asynchronously:
+Now in separate repo: **[kypflug/transmogrifier-api](https://github.com/kypflug/transmogrifier-api)**
+
+The cloud backend processes transmogrification jobs asynchronously. **Note:** The extension no longer uses cloud processing — it always processes locally. Cloud queue/process is used only by the PWA (Library of Transmogrifia). The share/resolve functions are used by both.
 
 ### Architecture
 ```
 POST /api/queue  →  Azure Storage Queue  →  Queue-trigger Function
                                                 ├─ Fetch & extract page (linkedom + Readability)
-                                                ├─ Call AI provider (user's keys)
+                                                ├─ Call AI provider (user's keys, via core)
                                                 └─ Upload to user's OneDrive approot/articles/
 ```
 
-### Key Files
+### Key Files (in transmogrifier-api repo)
 | File | Purpose |
 |------|---------|  
-| `cloud/src/functions/queue.ts` | HTTP trigger: validates token, enqueues job, returns 202 |
-| `cloud/src/functions/process.ts` | Queue trigger: fetch → AI → OneDrive upload |
-| `cloud/src/shared/content-extractor.ts` | Server-side extraction (linkedom + Readability) |
-| `cloud/src/shared/ai-service.ts` | Multi-provider AI calls (no server keys) |
-| `cloud/src/shared/onedrive.ts` | Uploads articles to user's OneDrive |
-| `cloud/src/functions/share.ts` | HTTP trigger: create/delete short links (authenticated) |
-| `cloud/src/functions/resolve.ts` | HTTP trigger: resolve short code to blob URL (public) |
-| `cloud/src/shared/share-registry.ts` | Azure Table Storage backend for URL shortener |
-| `cloud/src/shared/recipes.ts` | Inlined recipe prompts for cloud use |
+| `src/functions/queue.ts` | HTTP trigger: validates token, enqueues job, returns 202 |
+| `src/functions/process.ts` | Queue trigger: fetch → AI → OneDrive upload |
+| `src/shared/content-extractor.ts` | Server-side extraction (linkedom + Readability) |
+| `src/shared/ai-service.ts` | Thin wrapper — calls `@kypflug/transmogrifier-core` provider functions |
+| `src/shared/onedrive.ts` | Uploads articles to user's OneDrive |
+| `src/functions/share.ts` | HTTP trigger: create/delete short links (authenticated) |
+| `src/functions/resolve.ts` | HTTP trigger: resolve short code to blob URL (public) |
+| `src/shared/share-registry.ts` | Azure Table Storage backend for URL shortener |
 
 ### Deployment
 - **Function App**: `transmogrifier-api` at `https://transmogrifier-api.azurewebsites.net`
@@ -372,8 +399,8 @@ linkedom's `parseHTML()` places HTML fragments in `documentElement`, not `body`.
 ## Security Notes
 - **BYOK-only**: No API keys in source code, build output, or server-side config — users supply their own keys via the Settings UI
 - **Encrypted at rest**: All API keys encrypted with per-device AES-256-GCM key (non-extractable, stored in IndexedDB)
-- **Two-tier encryption**: Local device key for transparent access; user passphrase (PBKDF2, 600k iterations) only for OneDrive sync
-- **Sync passphrase in memory only**: Held in `chrome.storage.session`, cleared on browser close, never written to disk
+- **Two-tier encryption**: Local device key for transparent access; identity-derived key (HKDF from Microsoft user ID) for OneDrive sync
+- **No passphrase required**: Sync encryption key is deterministically derived from the user's Microsoft account ID
 - **Zero build-time secrets**: No `import.meta.env` references; `.env` file contains no secrets
 - **Cloud function is keyless**: The Azure Function has no server-side AI keys; the extension always sends the user's own keys in the request body
 - Generated HTML displayed in sandboxed iframe
@@ -381,7 +408,7 @@ linkedom's `parseHTML()` places HTML fragments in `documentElement`, not `body`.
 - Images stored as embedded base64 data URLs
 - OAuth2 PKCE flow (no client secret required)
 - OneDrive AppData folder is app-private
-- Encrypted settings optionally synced to OneDrive (`settings.enc.json`) — only decryptable with the user's passphrase
+- Encrypted settings optionally synced to OneDrive (`settings.enc.json`) — only decryptable with the user's identity-derived key
 - **BYOS sharing**: Users provide their own Azure Blob Storage credentials for article sharing — no server-side storage costs for shared articles. Short link registry uses Azure Table Storage on the existing Functions storage account (negligible cost).
 
 ## Testing Checklist
@@ -405,13 +432,12 @@ linkedom's `parseHTML()` places HTML fragments in `documentElement`, not `body`.
 - [ ] Test article sharing (share, copy link, unshare)
 - [ ] Test shared article viewer at transmogrifia.app/shared/{code}
 - [ ] Test share link expiry
-- [ ] Test cloud transmogrification (queue job, verify article appears in OneDrive)
+- [ ] Test cloud transmogrification via PWA (queue job, verify article appears in OneDrive)
 - [ ] Test active remix tracking in popup (progress, error display, dismiss)
-- [ ] Test cloud-queued active remixes in popup
 
 ## Future Ideas
 - [ ] Browser notifications when Transmogrify completes
 - [ ] Site-specific recipe presets
 - [ ] Streaming AI responses for faster feedback
 - [ ] Image caching to avoid regeneration
-- [ ] Job status endpoint (Table Storage) for cloud jobs
+- [ ] Job status endpoint (Table Storage) for PWA cloud jobs

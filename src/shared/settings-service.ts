@@ -1,23 +1,22 @@
 /**
  * Settings Service for Transmogrifier
  *
- * Two-tier encryption model:
+ * Encryption model:
  *  1. LOCAL: Settings encrypted with a per-device AES-256-GCM key stored in IndexedDB.
  *     Transparent to the user — no passphrase needed for day-to-day use.
- *  2. CLOUD SYNC: Settings encrypted with a user-chosen passphrase (PBKDF2 + AES-256-GCM).
- *     The passphrase is entered once per device to enable OneDrive sync.
- *     The same passphrase decrypts settings on any device (extension or PWA).
- *
- * The passphrase is held in memory only while needed for sync operations, then discarded.
+ *  2. CLOUD SYNC: Settings encrypted with an identity-derived key (HKDF from Microsoft user ID).
+ *     Deterministic: same user ID produces the same key on any device signed into the same account.
+ *     No passphrase needed — sync is always available when signed in.
  */
 
-import { encrypt, decrypt, encryptWithKey, decryptWithKey, type EncryptedEnvelope, type LocalEncryptedEnvelope } from './crypto-service';
+import { encryptWithIdentityKey, decryptWithIdentityKey, decryptLegacyEnvelope, encryptWithKey, decryptWithKey, type SyncEncryptedEnvelope, type LegacyEncryptedEnvelope, type LocalEncryptedEnvelope } from './crypto-service';
 import { getDeviceKey, deleteDeviceKey } from './device-key';
+import { getUserId } from './auth-service';
 import type { AIProvider, ImageProvider } from './config';
 
 // ─── Constants ─────────────
 
-/** Default cloud API URL (Azure Functions) */
+/** Default cloud API URL (Azure Functions) — used for sharing */
 const DEFAULT_CLOUD_URL = 'https://transmogrifier-api.azurewebsites.net';
 
 // ─── Types ────────────────
@@ -91,7 +90,7 @@ export interface TransmogrifierSettings {
   imageProvider: ImageProvider;
   /** Per-provider image config */
   image: ImageProviderSettings;
-  /** Cloud processing settings */
+  /** Cloud processing settings (used by PWA, kept for compat) */
   cloud: CloudSettings;
   /** Active sharing storage provider */
   sharingProvider: SharingProvider;
@@ -111,80 +110,11 @@ interface StoredSettings {
 
 // chrome.storage.local keys
 const SETTINGS_KEY = 'userSettings';
-const SYNC_PASSPHRASE_KEY = 'syncPassphrase';
 const SETTINGS_VERSION = 1;
 
 // ─── In-memory cache ────────────────
 
 let cachedSettings: TransmogrifierSettings | null = null;
-
-/**
- * Sync passphrase — held in memory only.
- * Used exclusively for encrypting/decrypting the OneDrive cloud envelope.
- * Not needed for local settings access.
- */
-let syncPassphrase: string | null = null;
-
-// ─── Sync passphrase management ────────────────
-
-/**
- * Get the sync passphrase (memory-only).
- * Falls back to chrome.storage.session for service-worker persistence.
- */
-export async function getSyncPassphrase(): Promise<string | null> {
-  if (syncPassphrase) return syncPassphrase;
-  try {
-    const result = await chrome.storage.session.get(SYNC_PASSPHRASE_KEY);
-    syncPassphrase = result[SYNC_PASSPHRASE_KEY] || null;
-  } catch {
-    // chrome.storage.session may not be available in all contexts
-  }
-  return syncPassphrase;
-}
-
-/**
- * Set the sync passphrase (used for OneDrive encrypted sync).
- * Stored in chrome.storage.session so it survives service-worker restarts
- * but is cleared when the browser closes.
- */
-export async function setSyncPassphrase(passphrase: string): Promise<void> {
-  syncPassphrase = passphrase;
-  try {
-    await chrome.storage.session.set({ [SYNC_PASSPHRASE_KEY]: passphrase });
-  } catch {
-    console.warn('[Settings] chrome.storage.session unavailable, passphrase in memory only');
-  }
-}
-
-/**
- * Check if a sync passphrase is currently available
- */
-export async function hasSyncPassphrase(): Promise<boolean> {
-  const pp = await getSyncPassphrase();
-  return !!pp;
-}
-
-/**
- * Clear the sync passphrase from memory and session storage
- */
-export async function clearSyncPassphrase(): Promise<void> {
-  syncPassphrase = null;
-  try {
-    await chrome.storage.session.remove([SYNC_PASSPHRASE_KEY]);
-  } catch {
-    // session storage may not be available
-  }
-}
-
-// ─── Legacy passphrase compat (delegates to sync passphrase) ────────────────
-// These aliases keep existing callers working during the transition.
-
-/** @deprecated Use getSyncPassphrase() */
-export const getPassphrase = getSyncPassphrase;
-/** @deprecated Use setSyncPassphrase() */
-export const setPassphrase = setSyncPassphrase;
-/** @deprecated Use hasSyncPassphrase() */
-export const hasPassphrase = hasSyncPassphrase;
 
 // ─── Settings CRUD ────────────────
 
@@ -258,11 +188,10 @@ export async function saveSettings(settings: TransmogrifierSettings): Promise<vo
 }
 
 /**
- * Clear all settings, device key, and sync passphrase
+ * Clear all settings and device key
  */
 export async function clearSettings(): Promise<void> {
   await chrome.storage.local.remove([SETTINGS_KEY]);
-  await clearSyncPassphrase();
   await deleteDeviceKey();
   cachedSettings = null;
 }
@@ -277,42 +206,39 @@ export function invalidateCache(): void {
 // ─── Sync helpers ────────────────
 
 /**
- * Get the settings as a passphrase-encrypted envelope for uploading to OneDrive.
- * Requires a sync passphrase to be set.
- * Returns null if no settings exist or no passphrase is available.
+ * Get the settings as an identity-key-encrypted envelope for uploading to OneDrive.
+ * Requires the user to be signed in (userId needed for key derivation).
+ * Returns null if no settings exist or user is not signed in.
  */
-export async function getEncryptedEnvelopeForSync(): Promise<{ envelope: EncryptedEnvelope; updatedAt: number } | null> {
-  const passphrase = await getSyncPassphrase();
-  if (!passphrase) {
-    console.warn('[Settings] Cannot prepare sync envelope: no sync passphrase set');
+export async function getEncryptedEnvelopeForSync(): Promise<{ envelope: SyncEncryptedEnvelope; updatedAt: number } | null> {
+  const userId = await getUserId();
+  if (!userId) {
+    console.warn('[Settings] Cannot prepare sync envelope: not signed in');
     return null;
   }
 
   const settings = await loadSettings();
   if (settings.updatedAt === 0) return null; // default/empty settings
 
-  // Re-encrypt with passphrase for cloud storage
+  // Encrypt with identity-derived key (HKDF from userId)
   const json = JSON.stringify(settings);
-  const envelope = await encrypt(json, passphrase);
+  const envelope = await encryptWithIdentityKey(json, userId);
 
   return { envelope, updatedAt: settings.updatedAt };
 }
 
 /**
- * Import a passphrase-encrypted envelope from OneDrive.
- * Decrypts with the sync passphrase, then re-encrypts with the device key for local storage.
- * Returns true if successful, false if passphrase mismatch or missing.
+ * Import an encrypted envelope from OneDrive.
+ * Supports both v2 (identity key) and v1 (legacy passphrase) envelopes.
+ * For v1 envelopes, a passphrase must be provided for migration.
+ * Decrypts, then re-encrypts with the device key for local storage.
+ * Returns true if successful, false on failure.
  */
 export async function importEncryptedEnvelope(
-  envelope: EncryptedEnvelope,
+  envelope: SyncEncryptedEnvelope | LegacyEncryptedEnvelope,
   remoteUpdatedAt: number,
+  legacyPassphrase?: string,
 ): Promise<boolean> {
-  const passphrase = await getSyncPassphrase();
-  if (!passphrase) {
-    console.warn('[Settings] Cannot import: no sync passphrase set');
-    return false;
-  }
-
   // Check if local is newer
   const result = await chrome.storage.local.get(SETTINGS_KEY);
   const local: StoredSettings | undefined = result[SETTINGS_KEY];
@@ -321,13 +247,37 @@ export async function importEncryptedEnvelope(
     return true; // Not an error — just no-op
   }
 
-  // Decrypt with passphrase
   let settings: TransmogrifierSettings;
-  try {
-    const json = await decrypt(envelope, passphrase);
-    settings = JSON.parse(json) as TransmogrifierSettings;
-  } catch (err) {
-    console.error('[Settings] Failed to decrypt cloud settings (wrong passphrase?):', err);
+
+  if (envelope.v === 2) {
+    // v2: identity-key encrypted
+    const userId = await getUserId();
+    if (!userId) {
+      console.warn('[Settings] Cannot import: not signed in');
+      return false;
+    }
+    try {
+      const json = await decryptWithIdentityKey(envelope, userId);
+      settings = JSON.parse(json) as TransmogrifierSettings;
+    } catch (err) {
+      console.error('[Settings] Failed to decrypt cloud settings:', err);
+      return false;
+    }
+  } else if (envelope.v === 1) {
+    // v1: legacy passphrase-encrypted (migration path)
+    if (!legacyPassphrase) {
+      console.warn('[Settings] Cannot import v1 envelope without passphrase');
+      return false;
+    }
+    try {
+      const json = await decryptLegacyEnvelope(envelope as LegacyEncryptedEnvelope, legacyPassphrase);
+      settings = JSON.parse(json) as TransmogrifierSettings;
+    } catch (err) {
+      console.error('[Settings] Failed to decrypt legacy settings (wrong passphrase?):', err);
+      return false;
+    }
+  } else {
+    console.error('[Settings] Unknown envelope version:', (envelope as { v: number }).v);
     return false;
   }
 
@@ -395,7 +345,7 @@ export async function getEffectiveImageConfig(): Promise<{
 }
 
 /**
- * Resolve the effective cloud API URL
+ * Resolve the effective cloud API URL (used for sharing).
  */
 export async function getEffectiveCloudUrl(): Promise<string> {
   const settings = await loadSettings();
@@ -433,6 +383,7 @@ export async function getEffectiveSharingConfig(): Promise<{
  * Get the AI config to send to the cloud function.
  * Always returns the user's configured AI keys (required for cloud processing).
  * Returns null only if no AI provider is configured.
+ * Note: Used by the PWA via settings sync; extension processes locally.
  */
 export async function getCloudAIConfig(): Promise<{
   provider: AIProvider;

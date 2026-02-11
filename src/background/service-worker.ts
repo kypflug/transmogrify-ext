@@ -7,7 +7,8 @@
 import { RemixMessage, RemixResponse, GeneratedImageData, RemixRequest } from '../shared/types';
 import { loadPreferences, savePreferences } from '../shared/utils';
 import { analyzeWithAI } from '../shared/ai-service';
-import { getRecipe, ImagePlaceholder, BUILT_IN_RECIPES } from '../shared/recipes';
+import { getRecipe, BUILT_IN_RECIPES } from '@kypflug/transmogrifier-core';
+import type { ImagePlaceholder } from '@kypflug/transmogrifier-core';
 import { generateImages, base64ToDataUrl, ImageGenerationRequest } from '../shared/image-service';
 import { isImageConfiguredAsync } from '../shared/config';
 import { 
@@ -31,9 +32,7 @@ import {
   toggleCloudFavorite,
   getSyncState,
   setupSyncAlarm,
-  getCloudIndex,
 } from '../shared/sync-service';
-import { queueForCloud, isCloudQueueConfiguredAsync } from '../shared/cloud-queue-service';
 import { uploadSettings, downloadSettings } from '../shared/onedrive-service';
 import { getEncryptedEnvelopeForSync, importEncryptedEnvelope, invalidateCache as invalidateSettingsCache } from '../shared/settings-service';
 import { shareArticle, unshareArticle } from '../shared/blob-storage-service';
@@ -181,30 +180,6 @@ async function cleanupStaleRemixes(): Promise<{ cleaned: number; remaining: numb
     const hasController = abortControllers.has(id);
     
     if (!hasController) {
-      // Cloud-queued jobs don't have controllers — they're fire-and-forget.
-      // The original scheduleCleanup timer may have been lost if the service
-      // worker was suspended, so enforce a max age here.
-      if (remix.status === 'cloud-queued') {
-        if (elapsed > 15 * 60 * 1000) {
-          // Cloud job has been sitting for over 15 minutes — clean it up.
-          // The article (if processed) will appear on the next sync pull.
-          console.log(`[Transmogrifier] Cleaning stale cloud job ${id} (${Math.round(elapsed / 1000)}s old)`);
-          cleaned.push(id);
-          changed = true;
-          // Don't add to remaining — remove entirely
-          continue;
-        }
-        // Still within the 15-minute window — update step text
-        if (elapsed > 5 * 60 * 1000) {
-          remix.step = 'Processing... article will appear on next sync';
-          changed = true;
-        } else if (elapsed > 60 * 1000) {
-          remix.step = `Cloud processing (${Math.round(elapsed / 1000)}s)`;
-          changed = true;
-        }
-        remaining[id] = remix;
-        continue;
-      }
       // No controller means the service worker restarted and the fetch is gone.
       // This is a truly orphaned request - mark as error.
       console.log(`[Transmogrifier] Cleaning orphaned remix ${id} (${Math.round(elapsed / 1000)}s old, no controller)`);
@@ -241,85 +216,11 @@ async function cleanupStaleRemixes(): Promise<{ cleaned: number; remaining: numb
 // Run cleanup on service worker startup (every time it wakes up)
 cleanupStaleRemixes().catch(console.error);
 
-/**
- * Resolve cloud-queued remixes whose articles have arrived via sync.
- * Matches active cloud-queued jobs by sourceUrl against the cloud index.
- * If a matching article was created after the job was queued, mark complete.
- */
-async function resolveCloudJobs(): Promise<number> {
-  const remixes = await getActiveRemixes();
-  const cloudJobs = Object.entries(remixes).filter(
-    ([, r]) => r.status === 'cloud-queued' && r.sourceUrl
-  );
-
-  if (cloudJobs.length === 0) return 0;
-
-  // Build a map of sourceUrl → cloud-queued remix entries
-  const urlToJobs = new Map<string, string[]>();
-  for (const [id, remix] of cloudJobs) {
-    const url = remix.sourceUrl!;
-    const existing = urlToJobs.get(url) || [];
-    existing.push(id);
-    urlToJobs.set(url, existing);
-  }
-
-  // Check both local articles and cloud index for matches
-  let localArticles: { originalUrl: string; createdAt: number; id: string }[] = [];
-  try {
-    localArticles = (await getAllArticles()).map(a => ({
-      originalUrl: a.originalUrl,
-      createdAt: a.createdAt,
-      id: a.id,
-    }));
-  } catch { /* ignore */ }
-
-  let cloudIndex: { originalUrl: string; createdAt: number; id: string }[] = [];
-  try {
-    cloudIndex = await getCloudIndex();
-  } catch { /* ignore */ }
-
-  const allArticles = [...localArticles, ...cloudIndex];
-  let resolved = 0;
-
-  for (const [jobId, remix] of cloudJobs) {
-    const match = allArticles.find(
-      a => a.originalUrl === remix.sourceUrl && a.createdAt >= remix.startTime
-    );
-    if (match) {
-      console.log(`[Transmogrifier] Cloud job ${jobId} resolved — article ${match.id} arrived`);
-      remixes[jobId] = {
-        ...remix,
-        status: 'complete',
-        step: 'Article delivered',
-        articleId: match.id,
-      };
-      resolved++;
-    }
-  }
-
-  if (resolved > 0) {
-    await chrome.storage.local.set({ activeRemixes: remixes });
-    await updateBadge(remixes);
-    // Schedule cleanup for resolved jobs
-    for (const [jobId, remix] of Object.entries(remixes)) {
-      if (remix.status === 'complete' && remix.articleId) {
-        scheduleCleanup(jobId, 5000);
-      }
-    }
-    // Notify open pages
-    chrome.runtime.sendMessage({ type: 'PROGRESS_UPDATE' }).catch(() => {});
-  }
-
-  return resolved;
-}
-
-// On every alarm tick (e.g. the 5-min sync alarm), run stale-job cleanup
-// and try to resolve cloud-queued jobs whose articles have arrived.
+// On every alarm tick (e.g. the 5-min sync alarm), run stale-job cleanup.
 // This is critical because setTimeout-based cleanup is lost when the
 // service worker is suspended by the browser.
 chrome.alarms.onAlarm.addListener(() => {
   cleanupStaleRemixes().catch(console.error);
-  resolveCloudJobs().catch(console.error);
 });
 
 /**
@@ -683,46 +584,6 @@ async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
       }
     }
 
-    case 'CLOUD_QUEUE': {
-      try {
-        const url = message.payload?.url;
-        const recipeId = message.payload?.recipeId || 'focus';
-        const customPrompt = message.payload?.customPrompt;
-        if (!url) return { success: false, error: 'No URL provided' };
-        const cloudReady = await isCloudQueueConfiguredAsync();
-        if (!cloudReady) {
-          return { success: false, error: 'Cloud API is not configured.' };
-        }
-
-        // Extract page title from URL for display
-        let pageTitle: string;
-        try { pageTitle = new URL(url).hostname; } catch { pageTitle = url; }
-
-        const result = await queueForCloud(url, recipeId, customPrompt);
-
-        // Track as an active remix so it shows in the popup
-        const requestId = result.jobId;
-        await updateRemixProgress(requestId, {
-          requestId,
-          tabId: -1,
-          status: 'cloud-queued',
-          step: 'Queued for cloud processing',
-          startTime: Date.now(),
-          pageTitle,
-          recipeId,
-          cloudJobId: result.jobId,
-          sourceUrl: url,
-        });
-
-        // Auto-clean cloud jobs after 15 minutes (they're fire-and-forget)
-        scheduleCleanup(requestId, 15 * 60 * 1000);
-
-        return { success: true, cloudQueue: { jobId: result.jobId, message: result.message } };
-      } catch (error) {
-        return { success: false, error: String(error) };
-      }
-    }
-
     // ─── Settings Sync Messages ─────────────────
 
     case 'SETTINGS_PUSH': {
@@ -748,7 +609,7 @@ async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
         const data = JSON.parse(json);
         const imported = await importEncryptedEnvelope(data.envelope, data.updatedAt);
         if (!imported) {
-          return { success: false, error: 'Failed to decrypt cloud settings. Check your passphrase.' };
+          return { success: false, error: 'Failed to decrypt cloud settings.' };
         }
         invalidateSettingsCache();
         return { success: true };
@@ -811,7 +672,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
   console.log('[Transmogrifier] AI_ANALYZE started, request:', requestId);
   
   // Get the recipe
-  const recipeId = message.payload?.recipeId || 'focus';
+  const recipeId = message.payload?.recipeId || 'reader';
   const recipe = getRecipe(recipeId);
   const generateImagesFlag = message.payload?.generateImages ?? false;
   
@@ -1018,7 +879,7 @@ function scheduleCleanup(requestId: string, delayMs = 10000) {
 async function performRespin(message: RemixMessage): Promise<RemixResponse> {
   const requestId = generateRequestId();
   const articleId = message.payload?.articleId;
-  const recipeId = message.payload?.recipeId || 'focus';
+  const recipeId = message.payload?.recipeId || 'reader';
   const generateImagesFlag = message.payload?.generateImages ?? false;
   
   if (!articleId) {

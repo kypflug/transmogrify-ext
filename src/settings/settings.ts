@@ -9,8 +9,6 @@ import {
   loadSettings,
   saveSettings,
   getDefaultSettings,
-  hasSyncPassphrase,
-  setSyncPassphrase,
   clearSettings,
   invalidateCache,
   type TransmogrifierSettings,
@@ -22,14 +20,6 @@ import { isSignedIn } from '../shared/auth-service';
 
 const backBtn = document.getElementById('backBtn')!;
 const saveIndicator = document.getElementById('saveIndicator')!;
-
-// Passphrase
-const passphraseInput = document.getElementById('passphrase') as HTMLInputElement;
-const passphraseConfirm = document.getElementById('passphraseConfirm') as HTMLInputElement;
-const setPassphraseBtn = document.getElementById('setPassphraseBtn')!;
-const passphraseBadge = document.getElementById('passphraseBadge')!;
-const passphraseError = document.getElementById('passphraseError')!;
-const togglePassphraseVisibility = document.getElementById('togglePassphraseVisibility')!;
 
 // AI Provider
 const aiProviderSelect = document.getElementById('aiProvider') as HTMLSelectElement;
@@ -70,15 +60,10 @@ const clearSettingsBtn = document.getElementById('clearSettingsBtn')!;
 
 let currentSettings: TransmogrifierSettings = getDefaultSettings();
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
-let syncPassphraseReady = false;
 
 // ─── Initialization ────────────────
 
 async function init() {
-  // Check sync passphrase status
-  syncPassphraseReady = await hasSyncPassphrase();
-  updatePassphraseBadge();
-
   // Load settings (device-key encrypted — always works, no passphrase needed)
   currentSettings = await loadSettings();
   populateForm(currentSettings);
@@ -277,14 +262,6 @@ function setupEventListeners() {
     window.location.href = url;
   });
 
-  // Passphrase
-  setPassphraseBtn.addEventListener('click', handleSetPassphrase);
-  togglePassphraseVisibility.addEventListener('click', () => {
-    const type = passphraseInput.type === 'password' ? 'text' : 'password';
-    passphraseInput.type = type;
-    passphraseConfirm.type = type;
-  });
-
   // AI Provider switching
   aiProviderSelect.addEventListener('change', () => {
     showProviderFields(aiFieldGroups, aiProviderSelect.value);
@@ -319,61 +296,9 @@ function setupEventListeners() {
   clearSettingsBtn.addEventListener('click', handleClearSettings);
 }
 
-// ─── Handler: Set Passphrase ────────────────
-
-async function handleSetPassphrase() {
-  const pp = passphraseInput.value;
-  const confirm = passphraseConfirm.value;
-
-  if (!pp) {
-    showPassphraseError('Please enter a passphrase');
-    return;
-  }
-
-  if (pp.length < 8) {
-    showPassphraseError('Passphrase must be at least 8 characters');
-    return;
-  }
-
-  if (pp !== confirm) {
-    showPassphraseError('Passphrases do not match');
-    return;
-  }
-
-  try {
-    await setSyncPassphrase(pp);
-    syncPassphraseReady = true;
-    updatePassphraseBadge();
-    hidePassphraseError();
-
-    // Clear passphrase fields
-    passphraseInput.value = '';
-    passphraseConfirm.value = '';
-
-    updateBadges();
-    await updateSyncStatus();
-  } catch (err) {
-    showPassphraseError(`Error: ${err instanceof Error ? err.message : 'Unknown'}`);
-  }
-}
-
-function showPassphraseError(msg: string) {
-  passphraseError.textContent = msg;
-  passphraseError.classList.remove('hidden');
-}
-
-function hidePassphraseError() {
-  passphraseError.classList.add('hidden');
-}
-
 // ─── Handler: Sync ────────────────
 
 async function handlePushSettings() {
-  if (!syncPassphraseReady) {
-    syncStatus.textContent = '⚠️ Set a sync passphrase first';
-    return;
-  }
-
   const signedIn = await isSignedIn();
   if (!signedIn) {
     syncStatus.textContent = '⚠️ Sign in to OneDrive first (from Library)';
@@ -404,11 +329,6 @@ async function handlePushSettings() {
 }
 
 async function handlePullSettings() {
-  if (!syncPassphraseReady) {
-    syncStatus.textContent = '⚠️ Set a sync passphrase first to decrypt cloud settings';
-    return;
-  }
-
   const signedIn = await isSignedIn();
   if (!signedIn) {
     syncStatus.textContent = '⚠️ Sign in to OneDrive first (from Library)';
@@ -450,10 +370,8 @@ async function handleClearSettings() {
   }
 
   await clearSettings();
-  syncPassphraseReady = false;
   currentSettings = getDefaultSettings();
   populateForm(currentSettings);
-  updatePassphraseBadge();
   updateBadges();
 }
 
@@ -462,20 +380,6 @@ async function handleClearSettings() {
 function showProviderFields(groups: Record<string, HTMLElement>, activeProvider: string) {
   for (const [provider, el] of Object.entries(groups)) {
     el.classList.toggle('hidden', provider !== activeProvider);
-  }
-}
-
-function updatePassphraseBadge() {
-  if (syncPassphraseReady) {
-    passphraseBadge.textContent = 'Set ✓';
-    passphraseBadge.classList.add('configured');
-    passphraseBadge.classList.remove('warning');
-    setPassphraseBtn.textContent = 'Change Passphrase';
-  } else {
-    passphraseBadge.textContent = 'Not set';
-    passphraseBadge.classList.remove('configured');
-    passphraseBadge.classList.add('warning');
-    setPassphraseBtn.textContent = 'Set Passphrase';
   }
 }
 
@@ -534,10 +438,6 @@ async function updateSyncStatus() {
     pushSettingsBtn.setAttribute('disabled', '');
     pullSettingsBtn.setAttribute('disabled', '');
     syncStatus.textContent = 'Sign in to OneDrive from the Library to enable sync.';
-  } else if (!syncPassphraseReady) {
-    syncBadge.textContent = 'No passphrase';
-    syncBadge.classList.remove('configured');
-    syncStatus.textContent = 'Set a sync passphrase above to enable encrypted cloud sync.';
   } else {
     syncBadge.textContent = 'Ready';
     syncBadge.classList.add('configured');

@@ -1,6 +1,6 @@
 /**
  * Tests for the two-tier encryption system:
- *  - crypto-service.ts (passphrase + device-key modes)
+ *  - crypto-service.ts (identity-key + device-key modes)
  *  - device-key.ts (CryptoKey generation & persistence)
  *  - settings-service.ts (load/save/sync with both tiers)
  */
@@ -11,75 +11,137 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // ─── crypto-service tests ────────────────
 
 describe('crypto-service', () => {
-  let encrypt: typeof import('../src/shared/crypto-service').encrypt;
-  let decrypt: typeof import('../src/shared/crypto-service').decrypt;
+  let deriveIdentityKey: typeof import('../src/shared/crypto-service').deriveIdentityKey;
+  let encryptWithIdentityKey: typeof import('../src/shared/crypto-service').encryptWithIdentityKey;
+  let decryptWithIdentityKey: typeof import('../src/shared/crypto-service').decryptWithIdentityKey;
+  let decryptLegacyEnvelope: typeof import('../src/shared/crypto-service').decryptLegacyEnvelope;
   let encryptWithKey: typeof import('../src/shared/crypto-service').encryptWithKey;
   let decryptWithKey: typeof import('../src/shared/crypto-service').decryptWithKey;
 
   beforeEach(async () => {
     const mod = await import('../src/shared/crypto-service');
-    encrypt = mod.encrypt;
-    decrypt = mod.decrypt;
+    deriveIdentityKey = mod.deriveIdentityKey;
+    encryptWithIdentityKey = mod.encryptWithIdentityKey;
+    decryptWithIdentityKey = mod.decryptWithIdentityKey;
+    decryptLegacyEnvelope = mod.decryptLegacyEnvelope;
     encryptWithKey = mod.encryptWithKey;
     decryptWithKey = mod.decryptWithKey;
   });
 
-  describe('passphrase-based (PBKDF2)', () => {
+  describe('identity-key-based (HKDF)', () => {
+    const userId = '00000000-0000-0000-0000-000000000001';
+
+    it('deriveIdentityKey is deterministic for the same userId', async () => {
+      const key1 = await deriveIdentityKey(userId);
+      const key2 = await deriveIdentityKey(userId);
+      expect(key1).toBeInstanceOf(CryptoKey);
+      expect(key2).toBeInstanceOf(CryptoKey);
+      expect(key1.algorithm).toMatchObject({ name: 'AES-GCM', length: 256 });
+    });
+
+    it('different userIds produce different keys', async () => {
+      const otherUserId = '00000000-0000-0000-0000-000000000002';
+      const envelope = await encryptWithIdentityKey('secret data', userId);
+      await expect(decryptWithIdentityKey(envelope, otherUserId)).rejects.toThrow();
+    });
+
     it('encrypt then decrypt round-trips correctly', async () => {
       const plaintext = JSON.stringify({ apiKey: 'sk-test-12345', model: 'gpt-4o' });
-      const passphrase = 'my-strong-passphrase!';
+      const envelope = await encryptWithIdentityKey(plaintext, userId);
 
-      const envelope = await encrypt(plaintext, passphrase);
-
-      expect(envelope.v).toBe(1);
-      expect(envelope.salt).toBeTruthy();
+      expect(envelope.v).toBe(2);
       expect(envelope.iv).toBeTruthy();
       expect(envelope.data).toBeTruthy();
-      // Ciphertext should not contain the plaintext
+      expect((envelope as any).salt).toBeUndefined();
       expect(envelope.data).not.toContain('sk-test');
 
-      const decrypted = await decrypt(envelope, passphrase);
+      const decrypted = await decryptWithIdentityKey(envelope, userId);
       expect(decrypted).toBe(plaintext);
     });
 
-    it('wrong passphrase throws', async () => {
-      const envelope = await encrypt('secret data', 'correct-passphrase');
-      await expect(decrypt(envelope, 'wrong-passphrase')).rejects.toThrow();
-    });
-
     it('tampered ciphertext throws', async () => {
-      const envelope = await encrypt('hello world', 'passphrase');
-      // Flip a character in the ciphertext
+      const envelope = await encryptWithIdentityKey('hello world', userId);
       const tampered = { ...envelope, data: envelope.data.slice(0, -2) + 'AA' };
-      await expect(decrypt(tampered, 'passphrase')).rejects.toThrow();
+      await expect(decryptWithIdentityKey(tampered, userId)).rejects.toThrow();
     });
 
-    it('produces unique salt and IV each time', async () => {
-      const e1 = await encrypt('same data', 'same-pass');
-      const e2 = await encrypt('same data', 'same-pass');
-      expect(e1.salt).not.toBe(e2.salt);
+    it('produces unique IV each time', async () => {
+      const e1 = await encryptWithIdentityKey('same data', userId);
+      const e2 = await encryptWithIdentityKey('same data', userId);
       expect(e1.iv).not.toBe(e2.iv);
       expect(e1.data).not.toBe(e2.data);
     });
 
     it('handles empty string', async () => {
-      const envelope = await encrypt('', 'passphrase');
-      const decrypted = await decrypt(envelope, 'passphrase');
+      const envelope = await encryptWithIdentityKey('', userId);
+      const decrypted = await decryptWithIdentityKey(envelope, userId);
       expect(decrypted).toBe('');
     });
 
     it('handles unicode content', async () => {
       const text = '日本語テスト 🔑 Ελληνικά';
-      const envelope = await encrypt(text, 'passphrase');
-      const decrypted = await decrypt(envelope, 'passphrase');
+      const envelope = await encryptWithIdentityKey(text, userId);
+      const decrypted = await decryptWithIdentityKey(envelope, userId);
       expect(decrypted).toBe(text);
     });
 
     it('handles large payloads', async () => {
       const large = JSON.stringify({ data: 'x'.repeat(100_000) });
-      const envelope = await encrypt(large, 'passphrase');
-      const decrypted = await decrypt(envelope, 'passphrase');
+      const envelope = await encryptWithIdentityKey(large, userId);
+      const decrypted = await decryptWithIdentityKey(envelope, userId);
       expect(decrypted).toBe(large);
+    });
+  });
+
+  describe('legacy envelope decryption (PBKDF2 migration)', () => {
+    async function createLegacyEnvelope(plaintext: string, passphrase: string) {
+      const encoder = new TextEncoder();
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+
+      const keyMaterial = await crypto.subtle.importKey(
+        'raw', encoder.encode(passphrase), 'PBKDF2', false, ['deriveKey'],
+      );
+      const key = await crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt, iterations: 600_000, hash: 'SHA-256' },
+        keyMaterial,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt'],
+      );
+      const ciphertext = await crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv }, key, encoder.encode(plaintext),
+      );
+
+      const toBase64 = (bytes: Uint8Array) => {
+        let binary = '';
+        for (const b of bytes) binary += String.fromCharCode(b);
+        return btoa(binary);
+      };
+
+      return {
+        v: 1 as const,
+        salt: toBase64(salt),
+        iv: toBase64(iv),
+        data: toBase64(new Uint8Array(ciphertext)),
+      };
+    }
+
+    it('decrypts a legacy v1 envelope with correct passphrase', async () => {
+      const plaintext = '{"apiKey":"sk-legacy-123"}';
+      const envelope = await createLegacyEnvelope(plaintext, 'my-old-passphrase');
+      const decrypted = await decryptLegacyEnvelope(envelope, 'my-old-passphrase');
+      expect(decrypted).toBe(plaintext);
+    });
+
+    it('wrong passphrase throws', async () => {
+      const envelope = await createLegacyEnvelope('secret data', 'correct-pass');
+      await expect(decryptLegacyEnvelope(envelope, 'wrong-pass')).rejects.toThrow();
+    });
+
+    it('rejects non-v1 envelope', async () => {
+      const fakeEnvelope = { v: 2, iv: 'abc', data: 'def' } as any;
+      await expect(decryptLegacyEnvelope(fakeEnvelope, 'pass')).rejects.toThrow(/Expected v1/);
     });
   });
 
@@ -101,7 +163,6 @@ describe('crypto-service', () => {
       expect(envelope.v).toBe(1);
       expect(envelope.iv).toBeTruthy();
       expect(envelope.data).toBeTruthy();
-      // LocalEncryptedEnvelope should not have salt
       expect((envelope as any).salt).toBeUndefined();
       expect(envelope.data).not.toContain('sk-test');
 
@@ -134,15 +195,15 @@ describe('crypto-service', () => {
   });
 
   describe('cross-mode isolation', () => {
-    it('passphrase envelope cannot be decrypted with device key', async () => {
+    it('identity-key envelope cannot be decrypted with device key', async () => {
       const deviceKey = await crypto.subtle.generateKey(
         { name: 'AES-GCM', length: 256 },
         false,
         ['encrypt', 'decrypt'],
       );
-      const passphraseEnv = await encrypt('secret', 'passphrase');
-      // Force-cast to LocalEncryptedEnvelope shape
-      await expect(decryptWithKey(passphraseEnv as any, deviceKey)).rejects.toThrow();
+      const userId = '00000000-0000-0000-0000-000000000001';
+      const identityEnv = await encryptWithIdentityKey('secret', userId);
+      await expect(decryptWithKey(identityEnv as any, deviceKey)).rejects.toThrow();
     });
   });
 });
@@ -151,12 +212,10 @@ describe('crypto-service', () => {
 
 describe('device-key', () => {
   beforeEach(() => {
-    // Clear fake-indexeddb between tests
     indexedDB = new IDBFactory();
   });
 
   it('generates a key on first call', async () => {
-    // Dynamic import to get fresh module state
     const { getDeviceKey } = await import('../src/shared/device-key');
     const key = await getDeviceKey();
 
@@ -172,7 +231,6 @@ describe('device-key', () => {
     const mod = await import('../src/shared/device-key');
     const key1 = await mod.getDeviceKey();
     const key2 = await mod.getDeviceKey();
-    // Same object reference (cached)
     expect(key1).toBe(key2);
   });
 
@@ -183,7 +241,6 @@ describe('device-key', () => {
 
     await deleteDeviceKey();
 
-    // After delete, a NEW key should be generated
     const key2 = await getDeviceKey();
     expect(key2).toBeTruthy();
     expect(key2).not.toBe(key1);
@@ -206,19 +263,13 @@ describe('device-key', () => {
 // ─── settings-service tests ────────────────
 
 describe('settings-service', () => {
-  // Mock chrome.storage.local and chrome.storage.session
   const localStore: Record<string, any> = {};
-  const sessionStore: Record<string, any> = {};
+  const TEST_USER_ID = '00000000-0000-0000-0000-aabbccddeeff';
 
   beforeEach(() => {
-    // Reset stores
     Object.keys(localStore).forEach(k => delete localStore[k]);
-    Object.keys(sessionStore).forEach(k => delete sessionStore[k]);
-
-    // Reset fake-indexeddb
     indexedDB = new IDBFactory();
 
-    // Mock chrome.storage
     (globalThis as any).chrome = {
       storage: {
         local: {
@@ -236,23 +287,6 @@ describe('settings-service', () => {
           remove: vi.fn(async (keys: string | string[]) => {
             const keyArr = Array.isArray(keys) ? keys : [keys];
             for (const k of keyArr) delete localStore[k];
-          }),
-        },
-        session: {
-          get: vi.fn(async (keys: string | string[]) => {
-            const result: Record<string, any> = {};
-            const keyArr = Array.isArray(keys) ? keys : [keys];
-            for (const k of keyArr) {
-              if (sessionStore[k] !== undefined) result[k] = sessionStore[k];
-            }
-            return result;
-          }),
-          set: vi.fn(async (items: Record<string, any>) => {
-            Object.assign(sessionStore, items);
-          }),
-          remove: vi.fn(async (keys: string | string[]) => {
-            const keyArr = Array.isArray(keys) ? keys : [keys];
-            for (const k of keyArr) delete sessionStore[k];
           }),
         },
       },
@@ -281,7 +315,7 @@ describe('settings-service', () => {
     settings.cloud = { apiUrl: 'https://my-func.azurewebsites.net' };
 
     await saveSettings(settings);
-    invalidateCache(); // Force re-read from storage
+    invalidateCache();
 
     const loaded = await loadSettings();
     expect(loaded.aiProvider).toBe('openai');
@@ -291,14 +325,13 @@ describe('settings-service', () => {
     expect(loaded.updatedAt).toBeGreaterThan(0);
   });
 
-  it('saveSettings does not require a passphrase', async () => {
+  it('saveSettings does not require sign-in', async () => {
     const { saveSettings, getDefaultSettings, invalidateCache } = await import('../src/shared/settings-service');
     invalidateCache();
 
     const settings = getDefaultSettings();
     settings.ai = { google: { apiKey: 'AIzaTest', model: 'gemini-2.0-flash' } };
 
-    // Should NOT throw — device key encryption doesn't need a passphrase
     await expect(saveSettings(settings)).resolves.not.toThrow();
   });
 
@@ -310,14 +343,12 @@ describe('settings-service', () => {
     settings.ai = { openai: { apiKey: 'sk-super-secret', model: 'gpt-4o' } };
     await saveSettings(settings);
 
-    // Check what's actually in the store
     const raw = localStore['userSettings'];
     expect(raw).toBeTruthy();
     expect(raw.envelope).toBeTruthy();
     expect(raw.envelope.v).toBe(1);
     expect(raw.envelope.iv).toBeTruthy();
     expect(raw.envelope.data).toBeTruthy();
-    // The raw data should NOT contain the API key in plaintext
     expect(JSON.stringify(raw)).not.toContain('sk-super-secret');
   });
 
@@ -338,38 +369,12 @@ describe('settings-service', () => {
     expect(localStore['userSettings']).toBeUndefined();
   });
 
-  it('sync passphrase is independent of local save/load', async () => {
-    const { hasSyncPassphrase, setSyncPassphrase, getSyncPassphrase, clearSyncPassphrase, saveSettings, loadSettings, getDefaultSettings, invalidateCache } = await import('../src/shared/settings-service');
-    invalidateCache();
+  it('getEncryptedEnvelopeForSync returns null when not signed in', async () => {
+    vi.resetModules();
+    vi.doMock('../src/shared/auth-service', () => ({
+      getUserId: vi.fn(async () => null),
+    }));
 
-    // No passphrase needed to save
-    const settings = getDefaultSettings();
-    settings.ai = { anthropic: { apiKey: 'sk-ant-test', model: 'claude-sonnet-4-20250514' } };
-    await saveSettings(settings);
-
-    expect(await hasSyncPassphrase()).toBe(false);
-
-    // Set sync passphrase
-    await setSyncPassphrase('my-sync-pass');
-    expect(await hasSyncPassphrase()).toBe(true);
-    expect(await getSyncPassphrase()).toBe('my-sync-pass');
-
-    // Load still works (uses device key, not passphrase)
-    invalidateCache();
-    const loaded = await loadSettings();
-    expect(loaded.ai.anthropic?.apiKey).toBe('sk-ant-test');
-
-    // Clear passphrase
-    await clearSyncPassphrase();
-    expect(await hasSyncPassphrase()).toBe(false);
-
-    // Load STILL works (device key, not passphrase)
-    invalidateCache();
-    const loaded2 = await loadSettings();
-    expect(loaded2.ai.anthropic?.apiKey).toBe('sk-ant-test');
-  });
-
-  it('getEncryptedEnvelopeForSync requires sync passphrase', async () => {
     const { saveSettings, getDefaultSettings, getEncryptedEnvelopeForSync, invalidateCache } = await import('../src/shared/settings-service');
     invalidateCache();
 
@@ -377,14 +382,20 @@ describe('settings-service', () => {
     settings.ai = { openai: { apiKey: 'sk-sync-test', model: 'gpt-4o' } };
     await saveSettings(settings);
 
-    // Without passphrase → null
     const result = await getEncryptedEnvelopeForSync();
     expect(result).toBeNull();
+
+    vi.doUnmock('../src/shared/auth-service');
   });
 
-  it('getEncryptedEnvelopeForSync produces passphrase-encrypted envelope', async () => {
-    const { saveSettings, getDefaultSettings, getEncryptedEnvelopeForSync, setSyncPassphrase, invalidateCache } = await import('../src/shared/settings-service');
-    const { decrypt } = await import('../src/shared/crypto-service');
+  it('getEncryptedEnvelopeForSync produces identity-key encrypted envelope', async () => {
+    vi.resetModules();
+    vi.doMock('../src/shared/auth-service', () => ({
+      getUserId: vi.fn(async () => TEST_USER_ID),
+    }));
+
+    const { saveSettings, getDefaultSettings, getEncryptedEnvelopeForSync, invalidateCache } = await import('../src/shared/settings-service');
+    const { decryptWithIdentityKey } = await import('../src/shared/crypto-service');
     invalidateCache();
 
     const settings = getDefaultSettings();
@@ -392,25 +403,29 @@ describe('settings-service', () => {
     settings.ai = { openai: { apiKey: 'sk-cloud-key', model: 'gpt-4o' } };
     await saveSettings(settings);
 
-    await setSyncPassphrase('cloud-pass-123');
-
     const syncData = await getEncryptedEnvelopeForSync();
     expect(syncData).not.toBeNull();
-    expect(syncData!.envelope.salt).toBeTruthy(); // Has salt = PBKDF2 passphrase mode
+    expect(syncData!.envelope.v).toBe(2);
+    expect((syncData!.envelope as any).salt).toBeUndefined();
     expect(syncData!.updatedAt).toBeGreaterThan(0);
 
-    // Verify it's decryptable with the passphrase
-    const json = await decrypt(syncData!.envelope, 'cloud-pass-123');
+    const json = await decryptWithIdentityKey(syncData!.envelope, TEST_USER_ID);
     const parsed = JSON.parse(json);
     expect(parsed.ai.openai.apiKey).toBe('sk-cloud-key');
+
+    vi.doUnmock('../src/shared/auth-service');
   });
 
-  it('importEncryptedEnvelope decrypts and re-encrypts with device key', async () => {
-    const { importEncryptedEnvelope, loadSettings, setSyncPassphrase, invalidateCache } = await import('../src/shared/settings-service');
-    const { encrypt } = await import('../src/shared/crypto-service');
+  it('importEncryptedEnvelope decrypts v2 envelope and re-encrypts with device key', async () => {
+    vi.resetModules();
+    vi.doMock('../src/shared/auth-service', () => ({
+      getUserId: vi.fn(async () => TEST_USER_ID),
+    }));
+
+    const { importEncryptedEnvelope, loadSettings, invalidateCache } = await import('../src/shared/settings-service');
+    const { encryptWithIdentityKey } = await import('../src/shared/crypto-service');
     invalidateCache();
 
-    // Simulate a cloud envelope (passphrase-encrypted)
     const cloudSettings = {
       version: 1,
       aiProvider: 'google',
@@ -420,54 +435,61 @@ describe('settings-service', () => {
       cloud: { apiUrl: '' },
       updatedAt: Date.now(),
     };
-    const cloudEnvelope = await encrypt(JSON.stringify(cloudSettings), 'import-pass');
-
-    await setSyncPassphrase('import-pass');
+    const cloudEnvelope = await encryptWithIdentityKey(JSON.stringify(cloudSettings), TEST_USER_ID);
 
     const success = await importEncryptedEnvelope(cloudEnvelope, cloudSettings.updatedAt);
     expect(success).toBe(true);
 
-    // Load should return the imported settings (device-key encrypted now)
     invalidateCache();
     const loaded = await loadSettings();
     expect(loaded.aiProvider).toBe('google');
     expect(loaded.ai.google?.apiKey).toBe('AIza-from-cloud');
+
+    vi.doUnmock('../src/shared/auth-service');
   });
 
-  it('importEncryptedEnvelope fails with wrong passphrase', async () => {
-    const { importEncryptedEnvelope, setSyncPassphrase, invalidateCache } = await import('../src/shared/settings-service');
-    const { encrypt } = await import('../src/shared/crypto-service');
+  it('importEncryptedEnvelope fails when not signed in', async () => {
+    vi.resetModules();
+    vi.doMock('../src/shared/auth-service', () => ({
+      getUserId: vi.fn(async () => null),
+    }));
+
+    const { importEncryptedEnvelope, invalidateCache } = await import('../src/shared/settings-service');
+    const { encryptWithIdentityKey } = await import('../src/shared/crypto-service');
     invalidateCache();
 
-    const cloudEnvelope = await encrypt('{"version":1}', 'correct-pass');
-    await setSyncPassphrase('wrong-pass');
-
-    const success = await importEncryptedEnvelope(cloudEnvelope, Date.now());
+    const envelope = await encryptWithIdentityKey('{"version":1}', TEST_USER_ID);
+    const success = await importEncryptedEnvelope(envelope, Date.now());
     expect(success).toBe(false);
+
+    vi.doUnmock('../src/shared/auth-service');
   });
 
   it('importEncryptedEnvelope skips if local is newer', async () => {
-    const { saveSettings, importEncryptedEnvelope, setSyncPassphrase, loadSettings, getDefaultSettings, invalidateCache } = await import('../src/shared/settings-service');
-    const { encrypt } = await import('../src/shared/crypto-service');
+    vi.resetModules();
+    vi.doMock('../src/shared/auth-service', () => ({
+      getUserId: vi.fn(async () => TEST_USER_ID),
+    }));
+
+    const { saveSettings, importEncryptedEnvelope, loadSettings, getDefaultSettings, invalidateCache } = await import('../src/shared/settings-service');
+    const { encryptWithIdentityKey } = await import('../src/shared/crypto-service');
     invalidateCache();
 
-    // Save locally first (this will have a recent updatedAt)
     const local = getDefaultSettings();
     local.ai = { openai: { apiKey: 'sk-local', model: 'gpt-4o' } };
     await saveSettings(local);
 
-    // Create an "older" cloud envelope
     const oldSettings = { ...getDefaultSettings(), ai: { openai: { apiKey: 'sk-old-cloud', model: 'gpt-4o' } }, updatedAt: 1000 };
-    const cloudEnvelope = await encrypt(JSON.stringify(oldSettings), 'pass');
-    await setSyncPassphrase('pass');
+    const cloudEnvelope = await encryptWithIdentityKey(JSON.stringify(oldSettings), TEST_USER_ID);
 
     const success = await importEncryptedEnvelope(cloudEnvelope, 1000);
-    expect(success).toBe(true); // Returns true (no-op, not an error)
+    expect(success).toBe(true);
 
-    // Local key should be preserved (not overwritten by older cloud data)
     invalidateCache();
     const loaded = await loadSettings();
     expect(loaded.ai.openai?.apiKey).toBe('sk-local');
+
+    vi.doUnmock('../src/shared/auth-service');
   });
 
   it('config resolution helpers work', async () => {

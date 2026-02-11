@@ -17,6 +17,7 @@ export interface AuthTokens {
   expiresAt: number; // epoch ms
   userName?: string;
   userEmail?: string;
+  userId?: string; // Microsoft Graph user OID (stable across sessions)
 }
 
 /**
@@ -111,6 +112,7 @@ export async function signIn(): Promise<AuthTokens> {
   const profile = await fetchUserProfile(tokens.accessToken);
   tokens.userName = profile.displayName;
   tokens.userEmail = profile.mail || profile.userPrincipalName;
+  tokens.userId = profile.id;
 
   // Store tokens
   await storeTokens(tokens);
@@ -206,6 +208,7 @@ export async function getAccessToken(): Promise<string | null> {
     const refreshed = await refreshAccessToken(tokens.refreshToken);
     refreshed.userName = tokens.userName;
     refreshed.userEmail = tokens.userEmail;
+    refreshed.userId = tokens.userId;
     await storeTokens(refreshed);
     return refreshed.accessToken;
   } catch (err) {
@@ -220,6 +223,7 @@ export async function getAccessToken(): Promise<string | null> {
  * Fetch user profile from Graph API
  */
 async function fetchUserProfile(accessToken: string): Promise<{
+  id: string;
   displayName: string;
   mail: string | null;
   userPrincipalName: string;
@@ -261,6 +265,16 @@ export async function getUserInfo(): Promise<{ name: string; email: string } | n
     name: tokens.userName || '',
     email: tokens.userEmail || '',
   };
+}
+
+/**
+ * Get the signed-in user's Microsoft Graph user ID (OID).
+ * Used for identity-derived encryption key derivation.
+ * Returns null if not signed in or userId not yet stored.
+ */
+export async function getUserId(): Promise<string | null> {
+  const tokens = await getStoredTokens();
+  return tokens?.userId || null;
 }
 
 // ─── Token Storage Helpers ───────────────────────────

@@ -4,7 +4,7 @@
  */
 
 import { getArticle, toggleFavorite, deleteArticle, exportArticleToFile, updateArticleShareStatus, SavedArticle } from '../shared/storage-service';
-import { BUILT_IN_RECIPES } from '../shared/recipes';
+import { BUILT_IN_RECIPES } from '@kypflug/transmogrifier-core';
 
 // Get article ID from URL
 const params = new URLSearchParams(window.location.search);
@@ -34,7 +34,7 @@ const cancelRespinBtn = document.getElementById('cancelRespinBtn')!;
 const confirmRespinBtn = document.getElementById('confirmRespinBtn')!;
 
 let currentArticle: SavedArticle | null = null;
-let selectedRecipeId = 'focus';
+let selectedRecipeId = 'reader';
 
 async function init() {
   if (!articleId) {

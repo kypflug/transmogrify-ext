@@ -1,84 +1,39 @@
 /**
  * AI Configuration
  * 
- * Type definitions for AI and image provider configs.
- * All actual keys/settings come from the Settings UI (encrypted storage) 
- * at runtime — nothing is baked into the build.
+ * Type re-exports from @kypflug/transmogrifier-core, plus extension-specific
+ * runtime config resolution (from encrypted user settings).
  */
 
-export type AIProvider = 'azure-openai' | 'openai' | 'anthropic' | 'google';
-export type ImageProvider = 'azure-openai' | 'openai' | 'google' | 'none';
+// Re-export all config types from core so existing consumers don't break
+export type {
+  AIProvider,
+  ImageProvider,
+} from '@kypflug/transmogrifier-core';
 
-// --- Provider-specific configs ---
+export type {
+  AzureOpenAIConfig,
+  OpenAIConfig,
+  AnthropicConfig,
+  GoogleConfig,
+  AIConfig,
+} from '@kypflug/transmogrifier-core';
 
-export interface AzureOpenAIConfig {
-  provider: 'azure-openai';
-  endpoint: string;
-  apiKey: string;
-  deployment: string;
-  apiVersion: string;
-}
+export type {
+  AzureImageConfig,
+  OpenAIImageConfig,
+  GoogleImageConfig,
+  NoImageConfig,
+  ImageConfig,
+} from '@kypflug/transmogrifier-core';
 
-export interface OpenAIConfig {
-  provider: 'openai';
-  apiKey: string;
-  model: string;
-}
+export { getProviderDisplayName } from '@kypflug/transmogrifier-core';
 
-export interface AnthropicConfig {
-  provider: 'anthropic';
-  apiKey: string;
-  model: string;
-}
-
-export interface GoogleConfig {
-  provider: 'google';
-  apiKey: string;
-  model: string;
-}
-
-export type AIConfig = AzureOpenAIConfig | OpenAIConfig | AnthropicConfig | GoogleConfig;
-
-export interface AzureImageConfig {
-  provider: 'azure-openai';
-  endpoint: string;
-  apiKey: string;
-  deployment: string;
-  apiVersion: string;
-}
-
-export interface OpenAIImageConfig {
-  provider: 'openai';
-  apiKey: string;
-  model: string;
-}
-
-export interface GoogleImageConfig {
-  provider: 'google';
-  apiKey: string;
-  model: string;
-}
-
-export interface NoImageConfig {
-  provider: 'none';
-}
-
-export type ImageConfig = AzureImageConfig | OpenAIImageConfig | GoogleImageConfig | NoImageConfig;
+import type { AIConfig, ImageConfig } from '@kypflug/transmogrifier-core';
 
 // ─── Runtime config resolution (from encrypted user settings only) ────────────
 
-import { getEffectiveAIConfig, getEffectiveImageConfig, getEffectiveCloudUrl } from './settings-service';
-
-/** Human-readable name for any provider string */
-export function getProviderDisplayName(provider: AIProvider | ImageProvider): string {
-  switch (provider) {
-    case 'azure-openai': return 'Azure OpenAI';
-    case 'openai': return 'OpenAI';
-    case 'anthropic': return 'Anthropic Claude';
-    case 'google': return 'Google Gemini';
-    case 'none': return 'None';
-  }
-}
+import { getEffectiveAIConfig, getEffectiveImageConfig } from './settings-service';
 
 /** Default (unconfigured) AI config */
 const UNCONFIGURED_AI: AIConfig = {
@@ -154,19 +109,6 @@ export async function resolveImageConfig(): Promise<ImageConfig> {
 }
 
 /**
- * Resolve the effective cloud API URL from user settings.
- */
-export async function resolveCloudUrl(): Promise<string> {
-  try {
-    const userUrl = await getEffectiveCloudUrl();
-    if (userUrl) return userUrl;
-  } catch {
-    // No settings available
-  }
-  return '';
-}
-
-/**
  * Check if AI is configured (from user settings)
  */
 export async function isAIConfiguredAsync(): Promise<boolean> {
@@ -195,12 +137,4 @@ export async function isImageConfiguredAsync(): Promise<boolean> {
     case 'none':
       return false;
   }
-}
-
-/**
- * Check if cloud queue is configured (from user settings)
- */
-export async function isCloudConfiguredAsync(): Promise<boolean> {
-  const url = await resolveCloudUrl();
-  return !!url;
 }

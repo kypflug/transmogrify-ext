@@ -1,5 +1,0 @@
-local.settings.json
-local.settings.example.json
-.git
-.vscode
-node_modules
