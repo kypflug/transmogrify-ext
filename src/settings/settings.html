@@ -231,6 +231,31 @@
         <p class="sync-status" id="syncStatus"></p>
       </section>
 
+      <!-- Gift Token -->
+      <section class="settings-section">
+        <div class="section-header">
+          <h2>🎁 Gift Token</h2>
+        </div>
+        <p class="section-desc">
+          Received a gift token from a friend? Enter the passphrase below to
+          import their shared AI and cloud settings.
+        </p>
+        <div class="field-row">
+          <label for="giftTokenInput">Token passphrase</label>
+          <div class="input-with-action">
+            <input
+              type="text"
+              id="giftTokenInput"
+              placeholder="e.g. sunny-river-otter"
+              autocomplete="off"
+              spellcheck="false"
+            >
+            <button class="btn btn-primary" id="giftTokenRedeem" type="button">Redeem</button>
+          </div>
+        </div>
+        <p class="gift-token-status hidden" id="giftTokenStatus"></p>
+      </section>
+
       <!-- Danger Zone -->
       <section class="settings-section danger-section">
         <div class="section-header">

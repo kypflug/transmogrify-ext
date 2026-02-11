@@ -355,6 +355,24 @@ body {
   min-height: 18px;
 }
 
+/* ─── Gift Token ─── */
+.gift-token-status {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.gift-token-status.hidden {
+  display: none;
+}
+
+.gift-token-success {
+  color: var(--edge-green);
+}
+
+.gift-token-error {
+  color: var(--edge-red);
+}
+
 /* ─── Danger Zone ─── */
 .danger-section {
   border-color: var(--edge-red-light);

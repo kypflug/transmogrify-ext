@@ -11,6 +11,7 @@ Supports **multiple AI providers** out of the box — Azure OpenAI, OpenAI, Anth
 - **BYOK (Bring Your Own Key)**: All API keys configured via the in-extension Settings UI — no build-time secrets
 - **Encrypted Key Storage**: AES-256-GCM encryption with PBKDF2 key derivation protects all API keys at rest
 - **Settings Sync**: Encrypted settings sync to OneDrive so keys carry across devices
+- **Gift Tokens**: Redeem a passphrase from a friend to import preconfigured AI/cloud/sharing settings
 - **AI Image Generation**: Optional image generation via Azure OpenAI, OpenAI, or Google Gemini
 - **Built-in Recipes**: Focus, Reader, Aesthetic, Illustrated, Visualize, Declutter, Interview, and Custom modes
 - **Pin Favorites**: Pin preferred recipes to the top of the list
@@ -143,6 +144,7 @@ src/
     +-- crypto-service.ts     # AES-256-GCM encryption (device key + passphrase modes)
     +-- device-key.ts         # Per-device non-extractable CryptoKey (IndexedDB)
     +-- settings-service.ts   # Settings CRUD, sync passphrase, encrypted sync
+    +-- gift-token.ts          # Gift token redemption (fetch + decrypt shared config)
     +-- blob-storage-service.ts # BYOS blob upload + short link registration
     +-- cloud-queue-service.ts # Cloud function queue client (BYOK)
     +-- storage-service.ts    # IndexedDB article storage

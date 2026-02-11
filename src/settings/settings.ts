@@ -15,6 +15,7 @@ import {
   type SharingProvider,
 } from '../shared/settings-service';
 import { isSignedIn } from '../shared/auth-service';
+import { redeemGiftToken } from '../shared/gift-token';
 
 // ─── DOM References ────────────────
 
@@ -292,6 +293,9 @@ function setupEventListeners() {
   pushSettingsBtn.addEventListener('click', handlePushSettings);
   pullSettingsBtn.addEventListener('click', handlePullSettings);
 
+  // Gift token
+  setupGiftToken();
+
   // Clear all
   clearSettingsBtn.addEventListener('click', handleClearSettings);
 }
@@ -474,6 +478,51 @@ function getActiveImageKey(settings: TransmogrifierSettings): string {
     case 'google': return settings.image.google?.apiKey || '';
     case 'none': return '';
   }
+}
+
+// ─── Handler: Gift Token ────────────────
+
+function setupGiftToken() {
+  const input = document.getElementById('giftTokenInput') as HTMLInputElement;
+  const redeemBtn = document.getElementById('giftTokenRedeem') as HTMLButtonElement;
+  const status = document.getElementById('giftTokenStatus') as HTMLElement;
+
+  async function handleRedeem() {
+    const token = input.value.trim();
+    if (!token) {
+      input.focus();
+      return;
+    }
+
+    redeemBtn.disabled = true;
+    redeemBtn.textContent = 'Redeeming…';
+    status.classList.add('hidden');
+
+    try {
+      await redeemGiftToken(token);
+      status.textContent = '✅ Settings imported successfully!';
+      status.className = 'gift-token-status gift-token-success';
+      input.value = '';
+
+      // Refresh the form to show imported settings
+      invalidateCache();
+      currentSettings = await loadSettings();
+      populateForm(currentSettings);
+      updateBadges();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Redemption failed.';
+      status.textContent = msg;
+      status.className = 'gift-token-status gift-token-error';
+    } finally {
+      redeemBtn.disabled = false;
+      redeemBtn.textContent = 'Redeem';
+    }
+  }
+
+  redeemBtn.addEventListener('click', handleRedeem);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleRedeem();
+  });
 }
 
 // ─── Start ────────────────
