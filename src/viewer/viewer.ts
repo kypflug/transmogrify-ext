@@ -4,6 +4,7 @@
  */
 
 import { getArticle, toggleFavorite, deleteArticle, exportArticleToFile, updateArticleShareStatus, SavedArticle } from '../shared/storage-service';
+import { resolveArticleImages } from '../shared/image-assets';
 import { BUILT_IN_RECIPES } from '@kypflug/transmogrifier-core';
 
 // Get article ID from URL
@@ -35,6 +36,14 @@ const confirmRespinBtn = document.getElementById('confirmRespinBtn')!;
 
 let currentArticle: SavedArticle | null = null;
 let selectedRecipeId = 'reader';
+let activeBlobUrls: string[] = [];
+
+function releaseActiveBlobUrls(): void {
+  for (const url of activeBlobUrls) {
+    URL.revokeObjectURL(url);
+  }
+  activeBlobUrls = [];
+}
 
 async function init() {
   if (!articleId) {
@@ -61,7 +70,18 @@ async function init() {
       /\\u([0-9a-fA-F]{4})/g,
       (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)),
     );
-    contentFrame.srcdoc = cleanHtml;
+
+    releaseActiveBlobUrls();
+    let renderHtml = cleanHtml;
+    try {
+      const resolved = await resolveArticleImages(cleanHtml, currentArticle.images);
+      renderHtml = resolved.html;
+      activeBlobUrls = resolved.blobUrls;
+    } catch (err) {
+      console.warn('[Viewer] Failed to resolve image assets:', err);
+    }
+
+    contentFrame.srcdoc = renderHtml;
     
     // Fix anchor links after iframe loads
     contentFrame.addEventListener('load', () => {
@@ -83,6 +103,10 @@ async function init() {
     showError();
   }
 }
+
+window.addEventListener('beforeunload', () => {
+  releaseActiveBlobUrls();
+});
 
 function showError() {
   loadingState.classList.add('hidden');

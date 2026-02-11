@@ -8,9 +8,11 @@
  */
 
 import { getAccessToken } from './auth-service';
+import type { OneDriveImageAsset } from '@kypflug/transmogrifier-core';
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 const APP_FOLDER = 'articles';
+const IMAGE_FOLDER = 'images';
 
 // Delta token persistence key
 const DELTA_TOKEN_KEY = 'onedrive_delta_token';
@@ -25,6 +27,7 @@ export interface OneDriveArticleMeta {
   updatedAt: number;
   isFavorite: boolean;
   size: number;
+  images?: OneDriveImageAsset[];
   // Sharing fields (optional)
   sharedUrl?: string;
   sharedBlobUrl?: string;
@@ -96,6 +99,77 @@ async function ensureFolder(): Promise<void> {
   }
 
   throw new Error(`Failed to check articles folder: ${res.statusText}`);
+}
+
+async function ensureFolderPath(segments: string[]): Promise<void> {
+  const headers = await authHeaders();
+  let currentPath = '';
+
+  for (const segment of segments) {
+    const targetPath = currentPath ? `${currentPath}/${segment}` : segment;
+    const res = await fetch(
+      `${GRAPH_BASE}/me/drive/special/approot:/${targetPath}`,
+      { headers }
+    );
+
+    if (res.ok) {
+      currentPath = targetPath;
+      continue;
+    }
+
+    if (res.status === 404) {
+      const parentPath = currentPath
+        ? `${GRAPH_BASE}/me/drive/special/approot:/${currentPath}:/children`
+        : `${GRAPH_BASE}/me/drive/special/approot/children`;
+      const createRes = await fetch(
+        parentPath,
+        {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: segment,
+            folder: {},
+            '@microsoft.graph.conflictBehavior': 'fail',
+          }),
+        }
+      );
+
+      if (!createRes.ok && createRes.status !== 409) {
+        throw new Error(`Failed to create folder ${targetPath}: ${createRes.statusText}`);
+      }
+      currentPath = targetPath;
+      continue;
+    }
+
+    throw new Error(`Failed to check folder ${targetPath}: ${res.statusText}`);
+  }
+}
+
+export async function ensureArticleImagesFolder(articleId: string): Promise<void> {
+  await ensureFolderPath([APP_FOLDER, articleId, IMAGE_FOLDER]);
+}
+
+export async function uploadBinaryToAppPath(
+  drivePath: string,
+  data: Blob,
+  contentType: string,
+): Promise<void> {
+  const headers = await authHeaders();
+  const res = await fetch(
+    `${GRAPH_BASE}/me/drive/special/approot:/${drivePath}:/content`,
+    {
+      method: 'PUT',
+      headers: {
+        ...headers,
+        'Content-Type': contentType,
+      },
+      body: data,
+    }
+  );
+
+  if (!res.ok) {
+    throw new Error(`Upload binary failed (${res.status}): ${res.statusText}`);
+  }
 }
 
 /**
@@ -196,7 +270,6 @@ export async function downloadArticleMeta(id: string): Promise<OneDriveArticleMe
     `${GRAPH_BASE}/me/drive/special/approot:/${APP_FOLDER}/${id}.json:/content`,
     { headers }
   );
-
   if (!res.ok) {
     throw new Error(`Download metadata failed (${res.status}): ${res.statusText}`);
   }
@@ -211,12 +284,16 @@ export async function deleteRemoteArticle(id: string): Promise<void> {
   const headers = await authHeaders();
 
   // Delete both files, ignore 404s (already deleted)
-  const [htmlRes, jsonRes] = await Promise.all([
+  const [htmlRes, jsonRes, folderRes] = await Promise.all([
     fetch(`${GRAPH_BASE}/me/drive/special/approot:/${APP_FOLDER}/${id}.html`, {
       method: 'DELETE',
       headers,
     }),
     fetch(`${GRAPH_BASE}/me/drive/special/approot:/${APP_FOLDER}/${id}.json`, {
+      method: 'DELETE',
+      headers,
+    }),
+    fetch(`${GRAPH_BASE}/me/drive/special/approot:/${APP_FOLDER}/${id}`, {
       method: 'DELETE',
       headers,
     }),
@@ -227,6 +304,9 @@ export async function deleteRemoteArticle(id: string): Promise<void> {
   }
   if (!jsonRes.ok && jsonRes.status !== 404) {
     throw new Error(`Delete JSON failed: ${jsonRes.statusText}`);
+  }
+  if (!folderRes.ok && folderRes.status !== 404) {
+    throw new Error(`Delete folder failed: ${folderRes.statusText}`);
   }
 
   console.log('[OneDrive] Deleted article:', id);
@@ -468,4 +548,21 @@ export async function downloadSettings(): Promise<string | null> {
   }
 
   return res.text();
+}
+
+/**
+ * Download a stored asset from OneDrive.
+ */
+export async function downloadArticleAsset(drivePath: string): Promise<Blob> {
+  const headers = await authHeaders();
+  const res = await fetch(
+    `${GRAPH_BASE}/me/drive/special/approot:/${drivePath}:/content`,
+    { headers }
+  );
+
+  if (!res.ok) {
+    throw new Error(`Download asset failed (${res.status}): ${res.statusText}`);
+  }
+
+  return res.blob();
 }

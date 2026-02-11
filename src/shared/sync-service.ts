@@ -17,6 +17,7 @@ import {
   getDelta,
   type OneDriveArticleMeta,
 } from './onedrive-service';
+import { persistArticleImages } from './image-assets';
 import {
   getArticle,
   getAllArticles,
@@ -107,6 +108,28 @@ export async function pushArticleToCloud(article: SavedArticle): Promise<void> {
   if (!(await isSignedIn())) return;
 
   try {
+    let html = article.html;
+    let images = article.images;
+
+    if (!images || images.length === 0) {
+      try {
+        const persisted = await persistArticleImages(article.id, html, article.originalUrl);
+        if (persisted.images.length > 0) {
+          html = persisted.html;
+          images = persisted.images;
+          const updatedArticle: SavedArticle = {
+            ...article,
+            html,
+            images,
+            size: new Blob([html]).size,
+          };
+          await upsertArticle(updatedArticle);
+        }
+      } catch (persistError) {
+        console.warn('[Sync] Image persistence failed, continuing without assets:', persistError);
+      }
+    }
+
     const meta: OneDriveArticleMeta = {
       id: article.id,
       title: article.title,
@@ -116,10 +139,11 @@ export async function pushArticleToCloud(article: SavedArticle): Promise<void> {
       createdAt: article.createdAt,
       updatedAt: article.updatedAt,
       isFavorite: article.isFavorite,
-      size: article.size,
+      size: new Blob([html]).size,
+      images,
     };
 
-    await uploadArticle(article.id, article.html, meta);
+    await uploadArticle(article.id, html, meta);
 
     // Don't update cloud index on push — let the next pull/delta discover it
     console.log('[Sync] Pushed article to cloud:', article.id);
@@ -174,6 +198,7 @@ export async function pushMetaUpdateToCloud(article: SavedArticle): Promise<void
       updatedAt: article.updatedAt,
       isFavorite: article.isFavorite,
       size: article.size,
+      images: article.images,
     };
 
     // Only re-upload metadata, not content
@@ -382,6 +407,7 @@ async function saveOrUpdateArticle(
     html: cleanHtml,
     originalContent: existing?.originalContent,
     thumbnail: existing?.thumbnail,
+    images: meta.images,
     createdAt: meta.createdAt,
     updatedAt: meta.updatedAt,
     isFavorite: meta.isFavorite,

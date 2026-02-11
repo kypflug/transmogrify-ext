@@ -3,6 +3,8 @@
  * Stores transmogrified pages with no size limits and full persistence
  */
 
+import type { OneDriveImageAsset } from '@kypflug/transmogrifier-core';
+
 const DB_NAME = 'TransmogrifierDB';
 const OLD_DB_NAME = 'FocusRemixDB'; // Previous name, for migration
 const DB_VERSION = 1;
@@ -17,6 +19,7 @@ export interface SavedArticle {
   html: string;
   originalContent?: string; // Original extracted content for respins
   thumbnail?: string; // Small preview image (data URL)
+  images?: OneDriveImageAsset[];
   createdAt: number;
   updatedAt: number;
   isFavorite: boolean;

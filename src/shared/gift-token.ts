@@ -16,7 +16,7 @@
  * exact URL, but the container cannot be listed.
  */
 
-import { decrypt, type EncryptedEnvelope } from './crypto-service';
+import { decryptLegacyEnvelope, type LegacyEncryptedEnvelope } from './crypto-service';
 import { saveSettings, type TransmogrifierSettings } from './settings-service';
 
 /** Base URL of the blob container that hosts encrypted gift config files. */
@@ -71,9 +71,9 @@ export async function redeemGiftToken(token: string): Promise<void> {
     throw new Error(`Failed to fetch gift config (${response.status}).`);
   }
 
-  let envelope: EncryptedEnvelope;
+  let envelope: LegacyEncryptedEnvelope;
   try {
-    envelope = await response.json() as EncryptedEnvelope;
+    envelope = await response.json() as LegacyEncryptedEnvelope;
   } catch {
     throw new Error('Gift config is not valid.');
   }
@@ -81,7 +81,7 @@ export async function redeemGiftToken(token: string): Promise<void> {
   // Decrypt with the gift token (passphrase)
   let json: string;
   try {
-    json = await decrypt(envelope, trimmed);
+    json = await decryptLegacyEnvelope(envelope, trimmed);
   } catch {
     throw new Error('Invalid token. Please check and try again.');
   }
