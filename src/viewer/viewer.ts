@@ -81,7 +81,10 @@ async function init() {
       console.warn('[Viewer] Failed to resolve image assets:', err);
     }
 
-    contentFrame.srcdoc = renderHtml;
+    // Force JS-animated elements visible (sandbox blocks the IntersectionObserver
+    // that would add .in to trigger the CSS transition)
+    const animOverride = '<style>.io,.reveal,.cap{opacity:1!important;transform:none!important}</style>';
+    contentFrame.srcdoc = renderHtml.replace('</head>', animOverride + '</head>');
     
     // Fix anchor links after iframe loads
     contentFrame.addEventListener('load', () => {

@@ -99,6 +99,25 @@ async function cleanupPendingDeletes(confirmed: Set<string>): Promise<void> {
   await chrome.storage.local.set({ [PENDING_DELETES_KEY]: filtered });
 }
 
+/**
+ * Strip data: URLs from image asset metadata to prevent bloating
+ * the cloud index in chrome.storage.local (10 MB quota).
+ * AI-generated images embed the full base64 payload in originalUrl;
+ * the actual bytes are already persisted at the asset's drivePath.
+ */
+function sanitizeImageMeta(meta: OneDriveArticleMeta): OneDriveArticleMeta {
+  if (!meta.images || meta.images.length === 0) return meta;
+  const needsSanitize = meta.images.some(img => img.originalUrl?.startsWith('data:'));
+  if (!needsSanitize) return meta;
+  return {
+    ...meta,
+    images: meta.images.map(img => ({
+      ...img,
+      originalUrl: img.originalUrl?.startsWith('data:') ? '' : img.originalUrl,
+    })),
+  };
+}
+
 // ─── Push Operations (local → cloud) ────────────────
 
 /**
@@ -130,7 +149,7 @@ export async function pushArticleToCloud(article: SavedArticle): Promise<void> {
       }
     }
 
-    const meta: OneDriveArticleMeta = {
+    const meta = sanitizeImageMeta({
       id: article.id,
       title: article.title,
       originalUrl: article.originalUrl,
@@ -141,7 +160,7 @@ export async function pushArticleToCloud(article: SavedArticle): Promise<void> {
       isFavorite: article.isFavorite,
       size: new Blob([html]).size,
       images,
-    };
+    });
 
     await uploadArticle(article.id, html, meta);
 
@@ -188,7 +207,7 @@ export async function pushMetaUpdateToCloud(article: SavedArticle): Promise<void
   if (!(await isSignedIn())) return;
 
   try {
-    const meta: OneDriveArticleMeta = {
+    const meta = sanitizeImageMeta({
       id: article.id,
       title: article.title,
       originalUrl: article.originalUrl,
@@ -199,7 +218,7 @@ export async function pushMetaUpdateToCloud(article: SavedArticle): Promise<void
       isFavorite: article.isFavorite,
       size: article.size,
       images: article.images,
-    };
+    });
 
     // Only re-upload metadata, not content
     const { uploadArticleMeta } = await import('./onedrive-service');
@@ -250,7 +269,7 @@ export async function pullFromCloud(): Promise<{ pulled: number; deleted: number
         console.log('[Sync] Skipping upsert for pending-delete article:', remoteMeta.id);
         continue;
       }
-      indexMap.set(remoteMeta.id, remoteMeta);
+      indexMap.set(remoteMeta.id, sanitizeImageMeta(remoteMeta));
 
       // If article exists locally, check for conflict
       if (localIds.has(remoteMeta.id)) {

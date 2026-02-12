@@ -470,8 +470,12 @@ async function selectArticle(id: string) {
       /\\u([0-9a-fA-F]{4})/g,
       (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)),
     );
-    const fabHideStyle = '<style>.remix-save-fab { display: none !important; }</style>';
-    contentFrame.srcdoc = cleanHtml.replace('</head>', fabHideStyle + '</head>');
+    const injectedStyles = '<style>'
+      + '.remix-save-fab{display:none!important}'
+      // Force JS-animated elements visible (sandbox blocks the IntersectionObserver)
+      + '.io,.reveal,.cap{opacity:1!important;transform:none!important}'
+      + '</style>';
+    contentFrame.srcdoc = cleanHtml.replace('</head>', injectedStyles + '</head>');
     contentFrame.addEventListener('load', () => {
       fixAnchorLinks();
       forwardIframeKeyboard();

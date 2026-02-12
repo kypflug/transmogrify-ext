@@ -52,13 +52,14 @@ export async function persistArticleImages(
         imageData.contentType,
       );
 
+      const isDataUrl = src.startsWith('data:');
       asset = {
         id: assetId,
-        originalUrl: resolvedUrl || src,
+        originalUrl: isDataUrl ? '' : (resolvedUrl || src),
         drivePath,
         contentType: imageData.contentType,
         bytes: imageData.bytes.length,
-        source: src.startsWith('data:') ? 'ai' : 'original',
+        source: isDataUrl ? 'ai' : 'original',
       };
 
       assetByHash.set(hash, asset);
@@ -66,7 +67,9 @@ export async function persistArticleImages(
     }
 
     img.setAttribute(IMAGE_ATTR_ID, asset.id);
-    img.setAttribute(IMAGE_ATTR_SRC, resolvedUrl || src);
+    if (asset.originalUrl) {
+      img.setAttribute(IMAGE_ATTR_SRC, asset.originalUrl);
+    }
   }
 
   return { html: serializeDocument(html, doc), images: assets };
