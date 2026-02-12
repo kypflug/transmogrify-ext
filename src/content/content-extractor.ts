@@ -257,8 +257,8 @@ function elementToBlock(el: HTMLElement, processed: Set<Element>): ContentBlock 
 
   // Headings
   if (/^h[1-6]$/.test(tag)) {
-    const text = el.textContent?.trim();
-    if (text && text.length > 0) {
+    const text = preserveInlineMarkup(el);
+    if (text.length > 0) {
       processed.add(el);
       return {
         type: 'heading',
@@ -275,7 +275,7 @@ function elementToBlock(el: HTMLElement, processed: Set<Element>): ContentBlock 
       processed.add(el);
       return {
         type: 'paragraph',
-        content: preserveLinks(el),
+        content: preserveInlineMarkup(el),
       };
     }
   }
@@ -316,7 +316,7 @@ function elementToBlock(el: HTMLElement, processed: Set<Element>): ContentBlock 
   if (tag === 'ul' || tag === 'ol') {
     const items: string[] = [];
     el.querySelectorAll(':scope > li').forEach(li => {
-      const text = li.textContent?.trim();
+      const text = preserveInlineMarkup(li as HTMLElement);
       if (text) items.push(text);
       processed.add(li);
     });
@@ -348,7 +348,7 @@ function elementToBlock(el: HTMLElement, processed: Set<Element>): ContentBlock 
 
   // Blockquotes
   if (tag === 'blockquote') {
-    const text = el.textContent?.trim();
+    const text = preserveInlineMarkup(el);
     if (text) {
       processed.add(el);
       return {
@@ -477,7 +477,7 @@ function elementToBlock(el: HTMLElement, processed: Set<Element>): ContentBlock 
         processed.add(el);
         return {
           type: 'paragraph',
-          content: preserveLinks(el),
+          content: preserveInlineMarkup(el),
         };
       }
     }
@@ -486,28 +486,58 @@ function elementToBlock(el: HTMLElement, processed: Set<Element>): ContentBlock 
   return null;
 }
 
-function preserveLinks(el: HTMLElement): string {
-  // Convert element to text while preserving link information
+// Inline tags whose semantics should be preserved in extracted content
+const PRESERVED_INLINE_TAGS = new Set([
+  'em', 'i', 'strong', 'b', 'u', 'mark', 'code',
+  'sub', 'sup', 's', 'del', 'ins', 'abbr',
+]);
+
+// Normalize presentational tags to their semantic equivalents
+const TAG_NORMALIZE: Record<string, string> = {
+  'i': 'em',
+  'b': 'strong',
+};
+
+/**
+ * Convert element to text while preserving inline formatting and links.
+ * Links are serialized as markdown [text](url).
+ * Inline emphasis/semantic tags are kept as HTML tags (e.g. <em>, <strong>).
+ */
+function preserveInlineMarkup(el: HTMLElement): string {
+  return serializeInlineContent(el).trim();
+}
+
+function serializeInlineContent(el: HTMLElement): string {
   let result = '';
   el.childNodes.forEach(node => {
     if (node.nodeType === Node.TEXT_NODE) {
       result += node.textContent;
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const child = node as HTMLElement;
-      if (child.tagName.toLowerCase() === 'a') {
+      const tag = child.tagName.toLowerCase();
+      if (tag === 'a') {
         const href = child.getAttribute('href');
-        const text = child.textContent;
+        const text = serializeInlineContent(child).trim();
         if (href && text) {
           result += `[${text}](${href})`;
         } else {
           result += text;
         }
+      } else if (tag === 'br') {
+        result += '\n';
+      } else if (PRESERVED_INLINE_TAGS.has(tag)) {
+        const innerContent = serializeInlineContent(child);
+        if (innerContent.trim()) {
+          const outputTag = TAG_NORMALIZE[tag] || tag;
+          result += `<${outputTag}>${innerContent}</${outputTag}>`;
+        }
       } else {
-        result += child.textContent;
+        // Recurse into unrecognized elements (e.g. <span>) without wrapping
+        result += serializeInlineContent(child);
       }
     }
   });
-  return result.trim();
+  return result;
 }
 
 function findCaption(img: HTMLElement): string | undefined {
