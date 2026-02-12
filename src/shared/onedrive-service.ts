@@ -43,6 +43,9 @@ export interface DeltaResult {
   deleted: string[];
   /** New delta token for next call */
   deltaToken: string;
+  /** True when the result is a full listing (delta token expired/missing).
+   *  Consumers should REPLACE the cloud index rather than merge. */
+  isFullResync: boolean;
 }
 
 interface DeltaItem {
@@ -380,7 +383,7 @@ export async function getDelta(): Promise<DeltaResult> {
       if (res.status === 404 || res.status === 410) {
         // Folder gone or delta token expired — do a full resync
         await chrome.storage.local.remove(DELTA_TOKEN_KEY);
-        return { upserted: await listRemoteArticles(), deleted: [], deltaToken: '' };
+        return { upserted: await listRemoteArticles(), deleted: [], deltaToken: '', isFullResync: true };
       }
       throw new Error(`Delta failed (${res.status}): ${res.statusText}`);
     }
@@ -439,7 +442,7 @@ export async function getDelta(): Promise<DeltaResult> {
     console.warn('[OneDrive] Delta token not saved — metadata download(s) failed; will retry next sync');
   }
 
-  return { upserted, deleted, deltaToken: newDeltaToken };
+  return { upserted, deleted, deltaToken: newDeltaToken, isFullResync: !savedToken };
 }
 
 /**

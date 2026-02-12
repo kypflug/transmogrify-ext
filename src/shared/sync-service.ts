@@ -88,10 +88,10 @@ async function addPendingDelete(articleId: string): Promise<void> {
   }
 }
 
-/** Remove confirmed deletes + expire entries older than 30 minutes */
+/** Remove confirmed deletes + expire entries older than 7 days */
 async function cleanupPendingDeletes(confirmed: Set<string>): Promise<void> {
   const current = await getRawPendingDeletes();
-  const MAX_AGE_MS = 30 * 60 * 1000;
+  const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
   const now = Date.now();
   const filtered = current.filter(
     d => !confirmed.has(d.id) && (now - d.deletedAt) < MAX_AGE_MS
@@ -261,7 +261,11 @@ export async function pullFromCloud(): Promise<{ pulled: number; deleted: number
 
     // Process upserts — update cloud index, don't download HTML yet (lazy)
     const cloudIndex = await getCloudIndex();
-    const indexMap = new Map(cloudIndex.map(a => [a.id, a]));
+    // On a full resync the listing IS the complete truth — start fresh so
+    // stale entries for remotely-deleted articles don't persist.
+    const indexMap = delta.isFullResync
+      ? new Map<string, OneDriveArticleMeta>()
+      : new Map(cloudIndex.map(a => [a.id, a]));
 
     for (const remoteMeta of delta.upserted) {
       // Skip articles we've locally deleted — delta may be stale
@@ -314,7 +318,18 @@ export async function pullFromCloud(): Promise<{ pulled: number; deleted: number
       indexMap.delete(pendingId);
     }
 
-    // Expire confirmed + old pending deletes (> 30 minutes)
+    // On a full resync, confirm pending deletes for articles that are absent
+    // from the listing — the remote delete succeeded, so stop tracking them.
+    if (delta.isFullResync) {
+      const remoteIds = new Set(delta.upserted.map(a => a.id));
+      for (const pendingId of pendingDeletes) {
+        if (!remoteIds.has(pendingId)) {
+          confirmedDeletes.add(pendingId);
+        }
+      }
+    }
+
+    // Expire confirmed + old pending deletes
     await cleanupPendingDeletes(confirmedDeletes);
 
     await setCloudIndex(Array.from(indexMap.values()));
