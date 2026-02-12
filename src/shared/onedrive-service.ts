@@ -49,6 +49,7 @@ interface DeltaItem {
   name?: string;
   deleted?: { state: string };
   '@microsoft.graph.downloadUrl'?: string;
+  '@removed'?: { reason: string };
   [key: string]: unknown;
 }
 
@@ -369,6 +370,7 @@ export async function getDelta(): Promise<DeltaResult> {
   const upserted: OneDriveArticleMeta[] = [];
   const deleted: string[] = [];
   let newDeltaToken = '';
+  let hasDownloadFailures = false;
 
   // Follow pagination
   while (url) {
@@ -388,7 +390,7 @@ export async function getDelta(): Promise<DeltaResult> {
     for (const item of (data.value || []) as DeltaItem[]) {
       const name: string = item.name || '';
 
-      if (item.deleted) {
+      if (item.deleted || item['@removed']) {
         // Deleted items may lack a name — extract ID from whatever we have
         if (name.endsWith('.json')) {
           deleted.push(name.replace('.json', ''));
@@ -416,6 +418,7 @@ export async function getDelta(): Promise<DeltaResult> {
           upserted.push(meta);
         } catch {
           console.warn('[OneDrive] Skipping delta item:', name);
+          hasDownloadFailures = true;
         }
       }
     }
@@ -429,9 +432,11 @@ export async function getDelta(): Promise<DeltaResult> {
     }
   }
 
-  // Persist the new delta token
-  if (newDeltaToken) {
+  // Persist the new delta token (only if all downloads succeeded)
+  if (newDeltaToken && !hasDownloadFailures) {
     await chrome.storage.local.set({ [DELTA_TOKEN_KEY]: newDeltaToken });
+  } else if (hasDownloadFailures) {
+    console.warn('[OneDrive] Delta token not saved — metadata download(s) failed; will retry next sync');
   }
 
   return { upserted, deleted, deltaToken: newDeltaToken };
