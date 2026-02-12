@@ -459,8 +459,9 @@ describe('settings-service', () => {
     invalidateCache();
 
     const envelope = await encryptWithIdentityKey('{"version":1}', TEST_USER_ID);
-    const success = await importEncryptedEnvelope(envelope, Date.now());
-    expect(success).toBe(false);
+    const result = await importEncryptedEnvelope(envelope, Date.now());
+    expect(result).not.toBe(true);
+    expect(typeof result).toBe('string');
 
     vi.doUnmock('../src/shared/auth-service');
   });

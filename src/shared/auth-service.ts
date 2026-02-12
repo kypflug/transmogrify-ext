@@ -270,11 +270,37 @@ export async function getUserInfo(): Promise<{ name: string; email: string } | n
 /**
  * Get the signed-in user's Microsoft Graph user ID (OID).
  * Used for identity-derived encryption key derivation.
- * Returns null if not signed in or userId not yet stored.
+ * Returns null if not signed in.
+ * If tokens exist but userId is missing (older sign-in), tries to
+ * fetch the profile and backfill it automatically.
  */
 export async function getUserId(): Promise<string | null> {
   const tokens = await getStoredTokens();
-  return tokens?.userId || null;
+  if (!tokens) return null;
+
+  if (tokens.userId) return tokens.userId;
+
+  // Backfill userId from Graph profile (sign-in from older version may not have stored it)
+  const accessToken = await getAccessToken();
+  if (!accessToken) return null;
+
+  try {
+    const profile = await fetchUserProfile(accessToken);
+    // Re-read tokens from storage: getAccessToken() may have refreshed and
+    // stored new tokens since our first read at the top of this function.
+    // Writing back the stale `tokens` object would overwrite the new access/
+    // refresh tokens and break future auth.
+    const freshTokens = await getStoredTokens();
+    if (freshTokens) {
+      freshTokens.userId = profile.id;
+      await storeTokens(freshTokens);
+    }
+    console.log('[Auth] Backfilled userId from Graph profile:', profile.id.substring(0, 8) + '…');
+    return profile.id;
+  } catch (err) {
+    console.warn('[Auth] Failed to backfill userId:', err);
+    return null;
+  }
 }
 
 // ─── Token Storage Helpers ───────────────────────────

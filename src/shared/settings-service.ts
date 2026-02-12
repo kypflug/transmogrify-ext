@@ -221,24 +221,28 @@ export async function getEncryptedEnvelopeForSync(): Promise<{ envelope: SyncEnc
   if (settings.updatedAt === 0) return null; // default/empty settings
 
   // Encrypt with identity-derived key (HKDF from userId)
+  console.log('[Settings] Encrypting for sync, userId prefix:', userId.substring(0, 8) + '…');
   const json = JSON.stringify(settings);
   const envelope = await encryptWithIdentityKey(json, userId);
 
   return { envelope, updatedAt: settings.updatedAt };
 }
 
+/** Result of importEncryptedEnvelope — `true` on success, or a string error message */
+export type ImportResult = true | string;
+
 /**
  * Import an encrypted envelope from OneDrive.
  * Supports both v2 (identity key) and v1 (legacy passphrase) envelopes.
  * For v1 envelopes, a passphrase must be provided for migration.
  * Decrypts, then re-encrypts with the device key for local storage.
- * Returns true if successful, false on failure.
+ * Returns `true` if successful, or a descriptive error string on failure.
  */
 export async function importEncryptedEnvelope(
   envelope: SyncEncryptedEnvelope | LegacyEncryptedEnvelope,
   remoteUpdatedAt: number,
   legacyPassphrase?: string,
-): Promise<boolean> {
+): Promise<ImportResult> {
   // Check if local is newer
   const result = await chrome.storage.local.get(SETTINGS_KEY);
   const local: StoredSettings | undefined = result[SETTINGS_KEY];
@@ -253,32 +257,40 @@ export async function importEncryptedEnvelope(
     // v2: identity-key encrypted
     const userId = await getUserId();
     if (!userId) {
-      console.warn('[Settings] Cannot import: not signed in');
-      return false;
+      console.warn('[Settings] Cannot import: userId unavailable (not signed in or profile fetch failed)');
+      return 'Cannot decrypt: user identity unavailable. Try signing out and back in.';
     }
+    // Validate envelope fields before attempting decrypt
+    if (typeof envelope.iv !== 'string' || typeof envelope.data !== 'string') {
+      console.error('[Settings] Malformed v2 envelope: iv/data are not strings',
+        { hasIv: typeof envelope.iv, hasData: typeof envelope.data });
+      return 'Cloud settings envelope is malformed. Try pushing your settings again.';
+    }
+    console.log('[Settings] Decrypting cloud settings, userId prefix:', userId.substring(0, 8) + '…,',
+      'iv length:', envelope.iv.length, 'data length:', envelope.data.length);
     try {
       const json = await decryptWithIdentityKey(envelope, userId);
       settings = JSON.parse(json) as TransmogrifierSettings;
     } catch (err) {
       console.error('[Settings] Failed to decrypt cloud settings:', err);
-      return false;
+      return 'Failed to decrypt cloud settings. Try signing out, signing back in, and re-pushing from this device.';
     }
   } else if (envelope.v === 1) {
     // v1: legacy passphrase-encrypted (migration path)
     if (!legacyPassphrase) {
       console.warn('[Settings] Cannot import v1 envelope without passphrase');
-      return false;
+      return 'Cloud settings use legacy encryption (v1). Migration requires the old passphrase.';
     }
     try {
       const json = await decryptLegacyEnvelope(envelope as LegacyEncryptedEnvelope, legacyPassphrase);
       settings = JSON.parse(json) as TransmogrifierSettings;
     } catch (err) {
       console.error('[Settings] Failed to decrypt legacy settings (wrong passphrase?):', err);
-      return false;
+      return 'Failed to decrypt legacy settings (wrong passphrase?).';
     }
   } else {
     console.error('[Settings] Unknown envelope version:', (envelope as { v: number }).v);
-    return false;
+    return `Unknown settings encryption version: ${(envelope as { v: number }).v}`;
   }
 
   // Re-encrypt with device key and store locally
@@ -316,12 +328,23 @@ export async function tryAutoImportSettingsFromCloud(
     const json = await downloadSettingsFn();
     if (!json) return false;
 
-    const data = JSON.parse(json) as { envelope: SyncEncryptedEnvelope | LegacyEncryptedEnvelope; updatedAt: number };
-    const imported = await importEncryptedEnvelope(data.envelope, data.updatedAt);
-    if (imported) {
-      console.log('[Settings] Auto-imported settings from OneDrive (new device)');
+    const data = JSON.parse(json);
+    // Handle both wrapped { envelope, updatedAt } and bare envelope formats
+    let envelope = data.envelope;
+    let updatedAt = data.updatedAt;
+    if (!envelope && typeof data.v === 'number') {
+      envelope = data;
+      updatedAt = data.updatedAt ?? 0;
     }
-    return imported;
+    if (!envelope) return false;
+
+    const imported = await importEncryptedEnvelope(envelope, updatedAt);
+    if (imported === true) {
+      console.log('[Settings] Auto-imported settings from OneDrive (new device)');
+      return true;
+    }
+    console.warn('[Settings] Auto-import failed:', imported);
+    return false;
   } catch (err) {
     // Non-fatal — the user can still configure manually
     console.warn('[Settings] Auto-import from cloud failed:', err);

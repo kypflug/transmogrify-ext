@@ -560,6 +560,12 @@ async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
         const result = await pullFromCloud();
         const syncState = await getSyncState();
         const userInfo = await getUserInfo();
+
+        // Always broadcast so any open library/viewer pages refresh their article list.
+        // The caller also refreshes, but the broadcast ensures the UI updates
+        // even if cross-context storage propagation has a brief delay.
+        broadcastArticlesChanged('sync-now');
+
         return {
           success: true,
           syncStatus: {
@@ -611,9 +617,26 @@ async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
           return { success: false, error: 'No settings found in OneDrive' };
         }
         const data = JSON.parse(json);
-        const imported = await importEncryptedEnvelope(data.envelope, data.updatedAt);
-        if (!imported) {
-          return { success: false, error: 'Failed to decrypt cloud settings.' };
+
+        // Determine envelope: expect { envelope: {...}, updatedAt } wrapper,
+        // but also handle bare envelope (v/iv/data at top level) for robustness.
+        let envelope = data.envelope;
+        let updatedAt = data.updatedAt;
+        if (!envelope && typeof data.v === 'number') {
+          // File is a bare SyncEncryptedEnvelope (no wrapper)
+          console.log('[Settings] Pull: bare envelope detected (no wrapper)');
+          envelope = data;
+          updatedAt = data.updatedAt ?? 0;
+        }
+        if (!envelope || typeof envelope.v !== 'number') {
+          console.error('[Settings] Pull: unexpected data structure, keys:', Object.keys(data));
+          return { success: false, error: 'Cloud settings file has an unexpected format. Try re-pushing your settings.' };
+        }
+
+        const imported = await importEncryptedEnvelope(envelope, updatedAt);
+        if (imported !== true) {
+          // imported is a descriptive error string
+          return { success: false, error: imported };
         }
         invalidateSettingsCache();
         return { success: true };
