@@ -29,6 +29,7 @@ let selectedRecipeId = 'reader';
 let activeRemixes: RemixRequest[] = [];
 let selectedPendingId: string | null = null;
 let activeBlobUrls: string[] = [];
+let isSelectingArticle = false;
 
 function releaseActiveBlobUrls(): void {
   for (const url of activeBlobUrls) {
@@ -411,6 +412,12 @@ async function updateFooter() {
 // ─── Article Selection ───────────────────────────────
 
 async function selectArticle(id: string) {
+  // Skip if already displaying this article or if a selection is in progress
+  if (id === selectedArticleId && currentArticle) return;
+  if (isSelectingArticle) return;
+  isSelectingArticle = true;
+
+  try {
   selectedArticleId = id;
   selectedPendingId = null;
   focusedIndex = filteredArticles.findIndex(a => a.id === id);
@@ -518,6 +525,9 @@ async function selectArticle(id: string) {
 
   } catch (err) {
     console.error('[Library] Failed to load article:', err);
+  }
+  } finally {
+    isSelectingArticle = false;
   }
 }
 

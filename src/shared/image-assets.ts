@@ -14,17 +14,20 @@ export async function persistArticleImages(
   html: string,
   baseUrl?: string,
 ): Promise<PersistedImagesResult> {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  const images = Array.from(doc.querySelectorAll('img')) as HTMLImageElement[];
-  if (images.length === 0) return { html, images: [] };
+  // Use regex-based parsing (DOMParser is unavailable in service workers)
+  const imgRegex = /<img\b[^>]*>/gi;
+  const imgTags = html.match(imgRegex);
+  if (!imgTags || imgTags.length === 0) return { html, images: [] };
 
   await ensureArticleImagesFolder(articleId);
 
   const assets: OneDriveImageAsset[] = [];
   const assetByHash = new Map<string, OneDriveImageAsset>();
 
-  for (const img of images) {
-    const src = img.getAttribute('src')?.trim();
+  let resultHtml = html;
+
+  for (const imgTag of imgTags) {
+    const src = getAttr(imgTag, 'src')?.trim();
     if (!src) continue;
     if (src.startsWith('tmg-asset:') || src.startsWith('blob:')) continue;
 
@@ -66,13 +69,15 @@ export async function persistArticleImages(
       assets.push(asset);
     }
 
-    img.setAttribute(IMAGE_ATTR_ID, asset.id);
+    // Build the updated <img> tag with asset attributes
+    let updatedTag = setAttr(imgTag, IMAGE_ATTR_ID, asset.id);
     if (asset.originalUrl) {
-      img.setAttribute(IMAGE_ATTR_SRC, asset.originalUrl);
+      updatedTag = setAttr(updatedTag, IMAGE_ATTR_SRC, asset.originalUrl);
     }
+    resultHtml = resultHtml.replace(imgTag, updatedTag);
   }
 
-  return { html: serializeDocument(html, doc), images: assets };
+  return { html: resultHtml, images: assets };
 }
 
 export async function resolveArticleImages(
@@ -222,6 +227,29 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return new Uint8Array(bytes).buffer;
 }
 
+// ─── Regex-based attribute helpers (service-worker safe) ────────────────
+
+/** Extract an attribute value from an HTML tag string */
+function getAttr(tag: string, name: string): string | undefined {
+  // Match name="value", name='value', or name=value (unquoted)
+  const re = new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|(\\S+))`, 'i');
+  const m = re.exec(tag);
+  if (!m) return undefined;
+  return m[1] ?? m[2] ?? m[3];
+}
+
+/** Set or add an attribute on an HTML tag string, returning the updated tag */
+function setAttr(tag: string, name: string, value: string): string {
+  const escaped = value.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  const re = new RegExp(`\\b${name}\\s*=\\s*(?:"[^"]*"|'[^']*'|\\S+)`, 'i');
+  if (re.test(tag)) {
+    return tag.replace(re, `${name}="${escaped}"`);
+  }
+  // Insert before the closing > (or />)
+  return tag.replace(/\s*\/?>$/, ` ${name}="${escaped}"$&`);
+}
+
+/** Serialize a parsed document back to an HTML string (page context only) */
 function serializeDocument(originalHtml: string, document: Document): string {
   const html = document.documentElement?.outerHTML || originalHtml;
   const trimmed = originalHtml.trimStart();

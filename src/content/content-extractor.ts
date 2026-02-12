@@ -160,7 +160,30 @@ function extractMainContent(): ContentBlock[] {
     node = walker.nextNode();
   }
 
-  return blocks;
+  return deduplicateContent(blocks);
+}
+
+/**
+ * Remove near-duplicate content blocks.
+ * Loosened extraction filters can let footer/repeated boilerplate through;
+ * this pass keeps only the first occurrence of each normalised text.
+ */
+function deduplicateContent(blocks: ContentBlock[]): ContentBlock[] {
+  const seen = new Set<string>();
+  return blocks.filter(block => {
+    // Only deduplicate text-bearing block types
+    if (block.type === 'image' || block.type === 'video' || block.type === 'embed' || block.type === 'divider') {
+      return true;
+    }
+    const text = (block.content || block.items?.join(' ') || '').trim();
+    if (!text) return true;
+    // Normalise: lowercase, collapse whitespace, strip punctuation
+    const key = text.toLowerCase().replace(/\s+/g, ' ').replace(/[^\w\s]/g, '');
+    if (!key) return true;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function findMainContent(): Element | null {
@@ -225,21 +248,24 @@ function findMainContent(): Element | null {
 
 function isHiddenOrSkipped(el: HTMLElement): boolean {
   const tag = el.tagName.toLowerCase();
-  const skipTags = ['script', 'style', 'noscript', 'nav', 'header', 'footer', 'aside', 'form', 'input', 'button'];
+  // Only skip elements that are almost never content — the LLM recipes
+  // handle filtering out residual page chrome, so we err toward over-extracting.
+  const skipTags = ['script', 'style', 'noscript', 'nav', 'form', 'input', 'button'];
   if (skipTags.includes(tag)) return true;
 
-  // Skip common ad/social/nav patterns (cheap string checks first)
+  // Skip unambiguous non-content patterns (keep the list tight — the AI
+  // recipes already tell the LLM to discard site debris)
   const className = (typeof el.className === 'string' ? el.className : '').toLowerCase();
   const id = el.id?.toLowerCase() || '';
-  const skipPatterns = ['sidebar', 'comment', 'share', 'social', 'related', 'recommend', 'promo', 'ad-', 'ads-', 'advertisement', 'newsletter', 'subscribe', 'popup', 'modal', 'cookie', 'gdpr', 'nav', 'menu', 'footer', 'header', 'topic', 'follow', 'digest', 'trending', 'signup', 'sign-up', 'cta', 'banner', 'widget', 'toolbar', 'drawer', 'toast', 'snackbar', 'overlay'];
+  const skipPatterns = ['sidebar', 'advertisement', 'popup', 'modal', 'cookie', 'gdpr', 'overlay'];
 
   for (const pattern of skipPatterns) {
     if (className.includes(pattern) || id.includes(pattern)) return true;
   }
 
-  // Skip elements with ARIA roles that indicate non-content
+  // Skip elements with ARIA roles that clearly indicate non-content
   const role = el.getAttribute('role')?.toLowerCase() || '';
-  const skipRoles = ['navigation', 'banner', 'complementary', 'contentinfo', 'dialog', 'alertdialog', 'toolbar', 'menu', 'menubar'];
+  const skipRoles = ['navigation', 'dialog', 'alertdialog'];
   if (skipRoles.includes(role)) return true;
 
   // Check HTML hidden attribute (avoids expensive getComputedStyle)
@@ -268,10 +294,10 @@ function elementToBlock(el: HTMLElement, processed: Set<Element>): ContentBlock 
     }
   }
 
-  // Paragraphs
+  // Paragraphs — keep ALL non-empty paragraphs; the LLM recipe handles filtering
   if (tag === 'p') {
     const text = el.textContent?.trim();
-    if (text && text.length > 10) {
+    if (text) {
       processed.add(el);
       return {
         type: 'paragraph',
@@ -450,14 +476,16 @@ function elementToBlock(el: HTMLElement, processed: Set<Element>): ContentBlock 
   }
 
   // Iframes (YouTube, Vimeo, CodePen, etc.)
+  // Emit as a video/link block — never as raw <iframe> HTML, because
+  // iframes are blocked by the extension's CSP and by sandboxed viewers.
   if (tag === 'iframe') {
     const iframe = el as HTMLIFrameElement;
     const src = iframe.src;
     if (src && isContentIframe(src)) {
       processed.add(el);
       return {
-        type: 'embed',
-        content: `<iframe src="${src}" allowfullscreen loading="lazy"></iframe>`,
+        type: 'video',
+        content: '',
         src,
       };
     }

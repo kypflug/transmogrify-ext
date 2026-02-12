@@ -818,7 +818,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
     return { success: false, error, requestId };
   }
 
-  let finalHtml = aiResult.data.html;
+  let finalHtml = sanitizeOutputHtml(aiResult.data.html);
 
   // Generate images if requested and AI returned image placeholders
   if (generateImagesFlag && aiResult.data.images && aiResult.data.images.length > 0) {
@@ -988,7 +988,7 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
     return { success: false, error, requestId };
   }
   
-  let finalHtml = aiResult.data.html;
+  let finalHtml = sanitizeOutputHtml(aiResult.data.html);
   
   // Generate images if requested
   if (generateImagesFlag && aiResult.data.images && aiResult.data.images.length > 0 && await isImageConfiguredAsync()) {
@@ -1069,12 +1069,26 @@ async function generateImagesFromPlaceholders(placeholders: ImagePlaceholder[]):
     const generated = result.images[i];
 
     if (generated && !generated.error) {
-      // Use base64 if available, otherwise use URL
+      // Always produce an inline data URL so the HTML is self-contained.
+      // Some providers (Azure DALL-E) return only a temporary URL that
+      // expires after ~60 min — embedding as base64 avoids that.
       let dataUrl: string;
       if (generated.base64) {
         dataUrl = base64ToDataUrl(generated.base64);
       } else if (generated.url) {
-        dataUrl = generated.url;
+        try {
+          const imgResp = await fetch(generated.url);
+          if (!imgResp.ok) throw new Error(`HTTP ${imgResp.status}`);
+          const buf = await imgResp.arrayBuffer();
+          const bytes = new Uint8Array(buf);
+          let binary = '';
+          for (let j = 0; j < bytes.length; j++) binary += String.fromCharCode(bytes[j]);
+          const contentType = imgResp.headers.get('content-type') || 'image/png';
+          dataUrl = `data:${contentType};base64,${btoa(binary)}`;
+        } catch (fetchErr) {
+          console.warn(`[Transmogrifier] Failed to inline image URL for ${placeholder.id}:`, fetchErr);
+          dataUrl = generated.url; // last-resort fallback
+        }
       } else {
         console.warn(`[Transmogrifier] No image data for ${placeholder.id}`);
         continue;
@@ -1101,13 +1115,24 @@ function replaceImagePlaceholders(html: string, images: GeneratedImageData[]): s
   let result = html;
   
   for (const image of images) {
-    // Replace {{image-id}} patterns
+    // Replace {{image-id}} placeholder patterns
     const placeholder = `{{${image.id}}}`;
     result = result.replaceAll(placeholder, image.dataUrl);
-    
-    // Also try without curly braces in case AI used different format
-    result = result.replaceAll(image.id, image.dataUrl);
   }
   
   return result;
+}
+
+/**
+ * Strip HTML elements that are incompatible with our sandboxed viewer / CSP.
+ * - <iframe>: blocked by extension CSP (frame-src) and sandbox restrictions
+ * - <object>/<embed>: plugin content, same CSP issue
+ */
+function sanitizeOutputHtml(html: string): string {
+  // Remove <iframe ...>...</iframe> and self-closing <iframe .../>
+  return html
+    .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, '')
+    .replace(/<iframe\b[^>]*\/>/gi, '')
+    .replace(/<object\b[^>]*>[\s\S]*?<\/object>/gi, '')
+    .replace(/<embed\b[^>]*\/?>/gi, '');
 }
