@@ -15,6 +15,7 @@ import {
   type SavedArticle,
 } from '../shared/storage-service';
 import { getMergedArticleList } from '../shared/sync-service';
+import { resolveArticleImages } from '../shared/image-assets';
 import { BUILT_IN_RECIPES } from '@kypflug/transmogrifier-core';
 import type { RemixRequest } from '../shared/types';
 
@@ -27,6 +28,18 @@ let focusedIndex = -1;
 let selectedRecipeId = 'reader';
 let activeRemixes: RemixRequest[] = [];
 let selectedPendingId: string | null = null;
+let activeBlobUrls: string[] = [];
+
+function releaseActiveBlobUrls(): void {
+  for (const url of activeBlobUrls) {
+    URL.revokeObjectURL(url);
+  }
+  activeBlobUrls = [];
+}
+
+window.addEventListener('beforeunload', () => {
+  releaseActiveBlobUrls();
+});
 
 // Sidebar width persistence key
 const SIDEBAR_WIDTH_KEY = 'library_sidebar_width';
@@ -470,12 +483,24 @@ async function selectArticle(id: string) {
       /\\u([0-9a-fA-F]{4})/g,
       (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)),
     );
+
+    // Resolve OneDrive image assets to blob URLs
+    releaseActiveBlobUrls();
+    let renderHtml = cleanHtml;
+    try {
+      const resolved = await resolveArticleImages(cleanHtml, article.images);
+      renderHtml = resolved.html;
+      activeBlobUrls = resolved.blobUrls;
+    } catch (err) {
+      console.warn('[Library] Failed to resolve image assets:', err);
+    }
+
     const injectedStyles = '<style>'
       + '.remix-save-fab{display:none!important}'
       // Force JS-animated elements visible (sandbox blocks the IntersectionObserver)
       + '.io,.reveal,.cap{opacity:1!important;transform:none!important}'
       + '</style>';
-    contentFrame.srcdoc = cleanHtml.replace('</head>', injectedStyles + '</head>');
+    contentFrame.srcdoc = renderHtml.replace('</head>', injectedStyles + '</head>');
     contentFrame.addEventListener('load', () => {
       fixAnchorLinks();
       forwardIframeKeyboard();
@@ -501,6 +526,7 @@ function clearSelection() {
   selectedPendingId = null;
   currentArticle = null;
   focusedIndex = -1;
+  releaseActiveBlobUrls();
   readingEmpty.classList.remove('hidden');
   readingArticle.classList.add('hidden');
   readingProgress.classList.add('hidden');
