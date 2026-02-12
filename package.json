@@ -10,7 +10,7 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@kypflug/transmogrifier-core": "file:../transmogrifier-core"
+    "@kypflug/transmogrifier-core": "^0.1.9"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.0.0-beta.28",

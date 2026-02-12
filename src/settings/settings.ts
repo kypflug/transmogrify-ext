@@ -468,6 +468,7 @@ function getActiveAIKey(settings: TransmogrifierSettings): string {
     case 'openai': return settings.ai.openai?.apiKey || '';
     case 'anthropic': return settings.ai.anthropic?.apiKey || '';
     case 'google': return settings.ai.google?.apiKey || '';
+    default: return '';
   }
 }
 
@@ -477,6 +478,7 @@ function getActiveImageKey(settings: TransmogrifierSettings): string {
     case 'openai': return settings.image.openai?.apiKey || '';
     case 'google': return settings.image.google?.apiKey || '';
     case 'none': return '';
+    default: return '';
   }
 }
 

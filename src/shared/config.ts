@@ -120,6 +120,8 @@ export async function isAIConfiguredAsync(): Promise<boolean> {
     case 'anthropic':
     case 'google':
       return !!config.apiKey;
+    default:
+      return false;
   }
 }
 
@@ -135,6 +137,8 @@ export async function isImageConfiguredAsync(): Promise<boolean> {
     case 'google':
       return !!config.apiKey;
     case 'none':
+      return false;
+    default:
       return false;
   }
 }

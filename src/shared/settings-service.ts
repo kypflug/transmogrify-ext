@@ -485,6 +485,8 @@ function getAIProviderConfig(
       if (!c?.apiKey) return null;
       return { provider, apiKey: c.apiKey, model: c.model };
     }
+    default:
+      return null;
   }
 }
 
@@ -509,6 +511,8 @@ function getImageProviderConfig(
       return { provider, apiKey: c.apiKey, model: c.model };
     }
     case 'none':
+      return null;
+    default:
       return null;
   }
 }
