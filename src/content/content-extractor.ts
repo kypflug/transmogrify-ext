@@ -646,6 +646,13 @@ function resolveImageSrc(img: HTMLImageElement): string | null {
       if (url && (url.startsWith('http') || url.startsWith('/'))) return url;
     }
 
+    // Try parent <picture> element's <source> srcset
+    const picture = img.closest('picture');
+    if (picture) {
+      const bestSrc = getBestSourceFromPicture(picture);
+      if (bestSrc) return bestSrc;
+    }
+
     // No lazy source found
     return null;
   }
@@ -653,6 +660,46 @@ function resolveImageSrc(img: HTMLImageElement): string | null {
   return src;
 }
 
+/**
+ * Extract the best (highest-resolution) image URL from a <picture> element's
+ * <source> children. Picks the URL with the largest `w` descriptor.
+ */
+function getBestSourceFromPicture(picture: Element): string | null {
+  const sources = picture.querySelectorAll('source');
+  let bestUrl: string | null = null;
+  let bestWidth = 0;
+
+  sources.forEach((source) => {
+    const srcset = source.getAttribute('srcset');
+    if (!srcset) return;
+
+    for (const entry of srcset.split(',')) {
+      const parts = entry.trim().split(/\s+/);
+      const url = parts[0];
+      const descriptor = parts[1] || '';
+      const widthMatch = /^(\d+)w$/.exec(descriptor);
+      const width = widthMatch ? parseInt(widthMatch[1], 10) : 0;
+
+      if (url && (url.startsWith('http') || url.startsWith('/'))) {
+        if (width > bestWidth || (!bestUrl && width === 0)) {
+          bestUrl = url;
+          bestWidth = width;
+        }
+      }
+    }
+  });
+
+  // Fallback: first URL from first <source> srcset
+  if (!bestUrl && sources.length > 0) {
+    const srcset = sources[0].getAttribute('srcset');
+    if (srcset) {
+      const url = srcset.trim().split(/\s*,\s*/)[0]?.trim().split(/\s+/)[0];
+      if (url && (url.startsWith('http') || url.startsWith('/'))) bestUrl = url;
+    }
+  }
+
+  return bestUrl;
+}
 
 
 function detectCodeLanguage(el: HTMLElement): string | undefined {
