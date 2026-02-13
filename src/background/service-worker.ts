@@ -7,7 +7,7 @@
 import { RemixMessage, RemixResponse, GeneratedImageData, RemixRequest } from '../shared/types';
 import { loadPreferences, savePreferences } from '../shared/utils';
 import { analyzeWithAI } from '../shared/ai-service';
-import { getRecipe, BUILT_IN_RECIPES, sanitizeOutputHtml } from '@kypflug/transmogrifier-core';
+import { getRecipe, BUILT_IN_RECIPES, sanitizeOutputHtml, resolveRelativeUrls } from '@kypflug/transmogrifier-core';
 import type { ImagePlaceholder } from '@kypflug/transmogrifier-core';
 import { generateImages, base64ToDataUrl, ImageGenerationRequest } from '../shared/image-service';
 import { isImageConfiguredAsync } from '../shared/config';
@@ -831,6 +831,9 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
 
   let finalHtml = sanitizeOutputHtml(aiResult.data.html);
 
+  // Resolve any relative URLs the AI carried through from the source
+  finalHtml = resolveRelativeUrls(finalHtml, tab.url || '');
+
   // Strip empty blockquotes the AI sometimes generates
   finalHtml = stripEmptyBlockquotes(finalHtml);
 
@@ -1004,9 +1007,12 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
   
   let finalHtml = sanitizeOutputHtml(aiResult.data.html);
 
+  // Resolve any relative URLs the AI carried through from the source
+  finalHtml = resolveRelativeUrls(finalHtml, originalArticle.originalUrl);
+
   // Strip empty blockquotes the AI sometimes generates
   finalHtml = stripEmptyBlockquotes(finalHtml);
-  
+
   // Generate images if requested
   if (generateImagesFlag && aiResult.data.images && aiResult.data.images.length > 0 && await isImageConfiguredAsync()) {
     await updateRemixProgress(requestId, { 
