@@ -6,10 +6,8 @@
 import {
   getAllArticles,
   getArticle,
-  deleteArticle,
   toggleFavorite,
   exportArticleToFile,
-  getStorageStats,
   updateArticleShareStatus,
   type ArticleSummary,
   type SavedArticle,
@@ -402,8 +400,9 @@ function renderList() {
 
 async function updateFooter() {
   try {
-    const stats = await getStorageStats();
-    sidebarFooter.textContent = `${stats.count} article${stats.count !== 1 ? 's' : ''} · ${formatBytes(stats.totalSize)}`;
+    const count = articles.length;
+    const totalSize = articles.reduce((sum, a) => sum + (a.size || 0), 0);
+    sidebarFooter.textContent = `${count} article${count !== 1 ? 's' : ''} · ${formatBytes(totalSize)}`;
   } catch {
     sidebarFooter.textContent = '';
   }
@@ -751,7 +750,7 @@ async function handleDeleteConfirm() {
   const deletedIndex = filteredArticles.findIndex(a => a.id === id);
   deleteModal.classList.add('hidden');
   try {
-    await deleteArticle(id);
+    await chrome.runtime.sendMessage({ type: 'DELETE_ARTICLE', payload: { articleId: id } });
     articles = articles.filter(a => a.id !== id);
     applyFilterAndSort();
     renderList();
