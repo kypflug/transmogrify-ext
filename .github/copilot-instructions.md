@@ -6,14 +6,13 @@
 Edge extension (Manifest V3) that uses an LLM (Azure OpenAI, OpenAI, Anthropic Claude, or Google Gemini) to transform web pages into beautiful standalone HTML documents. Optional AI images via Azure OpenAI, OpenAI, or Google Gemini. Articles stored in IndexedDB, synced via OneDrive.
 
 ## Multi-Repo Architecture
-The Transmogrifier ecosystem spans three repos plus a shared core package:
+The Transmogrifier ecosystem spans two repos plus a shared infrastructure monorepo:
 
 | Repo | Purpose |
-|------|---------|
+|------|---------||
 | **transmogrify-ext** (this repo) | Edge extension — content extraction, local AI processing, storage, sync |
-| [kypflug/transmogrifier-api](https://github.com/kypflug/transmogrifier-api) | Azure Functions backend — cloud queue processing, sharing/short links |
 | [kypflug/transmogrifia-pwa](https://github.com/kypflug/transmogrifia-pwa) | Read-only PWA for browsing articles on any device |
-| [kypflug/transmogrifier-core](https://github.com/kypflug/transmogrifier-core) | Shared npm package — recipes, AI/image provider calls, types |
+| [kypflug/transmogrifier-infra](https://github.com/kypflug/transmogrifier-infra) | Monorepo — `packages/core` (shared npm package) + `packages/api` (Azure Functions backend) |
 
 **`@kypflug/transmogrifier-core`** is the single source of truth for recipes, AI provider call functions, image provider call functions, and shared types (`OneDriveArticleMeta`, `TransmogrifierSettings`, config unions, etc.). All three consumer repos import from it. Published to GitHub Packages.
 
@@ -61,7 +60,7 @@ Recipes, AI provider calls, image provider calls, and shared types live in `@kyp
 - `npm run build` = `tsc && vite build`
 
 ## Cloud Functions (Azure)
-Now in separate repo: [kypflug/transmogrifier-api](https://github.com/kypflug/transmogrifier-api)
+Now in the infra monorepo: [kypflug/transmogrifier-infra](https://github.com/kypflug/transmogrifier-infra) (`packages/api`)
 - Deploy: `func azure functionapp publish transmogrifier-api --build remote`
 - ALWAYS use `--build remote` — this excludes `node_modules` (via `.funcignore`) and builds TypeScript on the server
 - Never deploy without `--build remote`; uploading `node_modules` locally creates 500MB+ packages that time out
@@ -72,3 +71,28 @@ Now in separate repo: [kypflug/transmogrifier-api](https://github.com/kypflug/tr
 - **Anthropic**: use `max_tokens` (their API still uses the old name)
 - **Google Gemini**: use `maxOutputTokens` inside `generationConfig`
 - AI provider calls are defined in `@kypflug/transmogrifier-core` — keep the core package, extension, and cloud API in sync
+
+## Working with the Infra Repo (Cross-Repo Fixes)
+
+The infra monorepo lives at `C:\git\transmogrifier-infra`. Many issues that manifest in the extension actually need fixes in `packages/core` — particularly:
+
+| Symptom in extension | Fix location |
+|---|---|
+| AI generates bad HTML patterns (hover effects, layout bugs, wrong styles) | `packages/core/src/recipes.ts` — recipe system prompts and response format constants |
+| AI response parsing failures | `packages/core/src/ai-service.ts` — `parseAIResponse`, provider call functions |
+| Image generation issues (wrong sizes, bad prompts) | `packages/core/src/image-service.ts` — provider dispatch |
+| Shared type mismatches | `packages/core/src/types.ts` |
+| HTML sanitization issues | `packages/core/src/sanitize.ts` — `sanitizeOutputHtml`, `resolveRelativeUrls` |
+
+### Workflow
+1. **Diagnose**: Determine if the issue is in extension code or in core (recipes, AI calls, types)
+2. **Edit core directly**: Open `C:\git\transmogrifier-infra\packages\core\src\*.ts` and make changes
+3. **Build core**: `cd C:\git\transmogrifier-infra\packages\core && npm run build`
+4. **Build extension**: `cd C:\vibes\remix-ext && npm run build` (picks up core changes via npm link or version bump)
+5. **Publish core** if needed: bump version in `packages/core/package.json`, then `npm publish`
+
+### Recipe Fix Principles
+- **Fix the recipe prompt, not a post-processing hack** — if the AI generates bad CSS/HTML patterns, add explicit constraints to the recipe's system prompt rather than regex-patching the output in the service worker
+- Post-processing in `service-worker.ts` (like `stripEmptyBlockquotes`, `fixBodyHeight`) is acceptable for edge cases, but recurring AI misbehavior should be fixed at the prompt level
+- Recipe prompts live in `RESPONSE_FORMAT` / `RESPONSE_FORMAT_WITH_IMAGES` constants (shared across all recipes) and in each recipe's individual `systemPrompt`
+- Test prompt changes by re-running a transmogrify on a page that triggers the bug

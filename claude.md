@@ -23,14 +23,13 @@ Transmogrifier is a Microsoft Edge extension (Manifest V3) that transforms web p
 
 ### Multi-Repo Architecture
 
-The Transmogrifier ecosystem spans three repos plus a shared core package:
+The Transmogrifier ecosystem spans two repos plus a shared infrastructure monorepo:
 
 | Repo | Purpose |
 |------|---------|  
 | **transmogrify-ext** (this repo) | Edge extension — content extraction, local AI processing, storage, sync |
-| [kypflug/transmogrifier-api](https://github.com/kypflug/transmogrifier-api) | Azure Functions backend — cloud queue processing, sharing/short links |
 | [kypflug/transmogrifia-pwa](https://github.com/kypflug/transmogrifia-pwa) | Read-only PWA for browsing articles on any device |
-| [kypflug/transmogrifier-core](https://github.com/kypflug/transmogrifier-core) | Shared npm package — recipes, AI/image provider calls, types |
+| [kypflug/transmogrifier-infra](https://github.com/kypflug/transmogrifier-infra) | Monorepo — `packages/core` (shared npm package) + `packages/api` (Azure Functions backend) |
 
 **`@kypflug/transmogrifier-core`** is the single source of truth for:
 - **Recipes**: All 6 built-in recipe definitions, prompt builder, response format constants
@@ -168,6 +167,36 @@ All recipes enforce:
   systemPrompt: `Instructions for the AI...`,
   userPromptTemplate: `Transform this content:\n\n{CONTENT}`,
 }
+```
+
+### Working with Recipes (Cross-Repo)
+
+Recipes live in the infra monorepo at `C:\git\transmogrifier-infra\packages\core\src\recipes.ts`. This file contains:
+
+| Section | What it controls |
+|---|---|
+| `RESPONSE_FORMAT` | Shared instructions appended to all non-image recipes (HTML structure, typography, color, motion, accessibility) |
+| `RESPONSE_FORMAT_WITH_IMAGES` | Same but with image placeholder instructions — used by image-enabled recipes |
+| `PAGE_CHROME_SCRIPT` | Save button + reading progress bar injected into every generated page |
+| `BUILT_IN_RECIPES[]` | Individual recipe definitions with per-recipe `systemPrompt` and `userPromptTemplate` |
+| `buildPrompt()` | Assembles final system + user prompts from recipe + content + options |
+
+**Debugging AI output issues:**
+1. Check the shared article or generated HTML to identify the problematic CSS/HTML pattern
+2. Trace whether the issue comes from `RESPONSE_FORMAT` (affects all recipes) or a specific recipe's `systemPrompt`
+3. Add explicit constraints to the prompt — AI models respond well to "NEVER do X" and "ONLY do Y" phrasing
+4. Prefer fixing the recipe over adding post-processing hacks in `service-worker.ts`
+
+**Common prompt pitfalls:**
+- Vague motion guidance (e.g., "subtle hover transitions") → AI invents transform effects on images, causing elements to fly around. Always specify what elements a hover/animation rule applies to and what properties are allowed
+- Missing explicit constraints → AI fills in the blanks creatively, often incorrectly. If you don't want something, say so
+- Teaching bad habits in one section (e.g., "images scale on entrance") that the AI generalizes to hover states
+
+**Build & test workflow:**
+```
+cd C:\git\transmogrifier-infra\packages\core && npm run build
+cd C:\vibes\remix-ext && npm run build
+# Then reload extension in Edge and re-transmogrify a test page
 ```
 
 ## AI Response Format
@@ -359,7 +388,7 @@ interface LegacyEncryptedEnvelope {
 
 ## Cloud Functions (Azure)
 
-Now in separate repo: **[kypflug/transmogrifier-api](https://github.com/kypflug/transmogrifier-api)**
+Now in the infra monorepo: **[kypflug/transmogrifier-infra](https://github.com/kypflug/transmogrifier-infra)** (`packages/api`)
 
 The cloud backend processes transmogrification jobs asynchronously. **Note:** The extension no longer uses cloud processing — it always processes locally. Cloud queue/process is used only by the PWA (Library of Transmogrifia). The share/resolve functions are used by both.
 
@@ -371,7 +400,7 @@ POST /api/queue  →  Azure Storage Queue  →  Queue-trigger Function
                                                 └─ Upload to user's OneDrive approot/articles/
 ```
 
-### Key Files (in transmogrifier-api repo)
+### Key Files (in `packages/api` of transmogrifier-infra)
 | File | Purpose |
 |------|---------|  
 | `src/functions/queue.ts` | HTTP trigger: validates token, enqueues job, returns 202 |

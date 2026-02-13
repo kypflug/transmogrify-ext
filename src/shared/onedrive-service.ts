@@ -46,6 +46,9 @@ export interface DeltaResult {
   /** True when the result is a full listing (delta token expired/missing).
    *  Consumers should REPLACE the cloud index rather than merge. */
   isFullResync: boolean;
+  /** True when one or more metadata downloads failed during the delta.
+   *  Consumers should NOT trust the upserted list as complete. */
+  hasDownloadFailures: boolean;
 }
 
 interface DeltaItem {
@@ -318,10 +321,12 @@ export async function deleteRemoteArticle(id: string): Promise<void> {
 
 /**
  * List all article metadata files from OneDrive
+ * Returns the metadata array and whether any downloads failed.
  */
-export async function listRemoteArticles(): Promise<OneDriveArticleMeta[]> {
+export async function listRemoteArticles(): Promise<{ metas: OneDriveArticleMeta[]; hasFailures: boolean }> {
   const headers = await authHeaders();
   const metas: OneDriveArticleMeta[] = [];
+  let hasFailures = false;
 
   // Don't use $filter — consumer OneDrive doesn't support it on /children
   let url: string | null = `${GRAPH_BASE}/me/drive/special/approot:/${APP_FOLDER}:/children?$select=name&$top=200`;
@@ -329,7 +334,7 @@ export async function listRemoteArticles(): Promise<OneDriveArticleMeta[]> {
   while (url) {
     const res = await fetch(url, { headers });
     if (!res.ok) {
-      if (res.status === 404) return []; // folder doesn't exist yet
+      if (res.status === 404) return { metas: [], hasFailures: false }; // folder doesn't exist yet
       throw new Error(`List articles failed: ${res.statusText}`);
     }
 
@@ -345,13 +350,14 @@ export async function listRemoteArticles(): Promise<OneDriveArticleMeta[]> {
         metas.push(meta);
       } catch {
         console.warn('[OneDrive] Skipping unreadable metadata:', name);
+        hasFailures = true;
       }
     }
 
     url = data['@odata.nextLink'] || null;
   }
 
-  return metas;
+  return { metas, hasFailures };
 }
 
 /**
@@ -383,7 +389,8 @@ export async function getDelta(): Promise<DeltaResult> {
       if (res.status === 404 || res.status === 410) {
         // Folder gone or delta token expired — do a full resync
         await chrome.storage.local.remove(DELTA_TOKEN_KEY);
-        return { upserted: await listRemoteArticles(), deleted: [], deltaToken: '', isFullResync: true };
+        const listing = await listRemoteArticles();
+        return { upserted: listing.metas, deleted: [], deltaToken: '', isFullResync: true, hasDownloadFailures: listing.hasFailures };
       }
       throw new Error(`Delta failed (${res.status}): ${res.statusText}`);
     }
@@ -442,7 +449,7 @@ export async function getDelta(): Promise<DeltaResult> {
     console.warn('[OneDrive] Delta token not saved — metadata download(s) failed; will retry next sync');
   }
 
-  return { upserted, deleted, deltaToken: newDeltaToken, isFullResync: !savedToken };
+  return { upserted, deleted, deltaToken: newDeltaToken, isFullResync: !savedToken, hasDownloadFailures };
 }
 
 /**

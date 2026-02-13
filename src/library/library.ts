@@ -120,6 +120,15 @@ async function init() {
   await loadActiveRemixes();
   await loadSyncStatus();
 
+  // Trigger a background sync on Library open so newly synced articles appear.
+  // The ARTICLES_CHANGED broadcast from the service worker will auto-refresh.
+  chrome.runtime.sendMessage({ type: 'SYNC_NOW' }).then(resp => {
+    if (resp?.success) {
+      loadSyncStatus();
+      loadArticles();
+    }
+  }).catch(() => {});
+
   // If URL has ?id=, pre-select that article
   const params = new URLSearchParams(window.location.search);
   const preselect = params.get('id');

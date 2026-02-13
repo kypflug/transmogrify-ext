@@ -262,9 +262,11 @@ export async function pullFromCloud(): Promise<{ pulled: number; deleted: number
 
     // Process upserts — update cloud index, don't download HTML yet (lazy)
     const cloudIndex = await getCloudIndex();
-    // On a full resync the listing IS the complete truth — start fresh so
-    // stale entries for remotely-deleted articles don't persist.
-    const indexMap = delta.isFullResync
+    // On a full resync with no download failures, the listing IS the complete
+    // truth — start fresh so stale entries don't persist.
+    // If there were download failures, MERGE with the existing index to avoid
+    // losing entries for articles whose metadata couldn't be fetched.
+    const indexMap = (delta.isFullResync && !delta.hasDownloadFailures)
       ? new Map<string, OneDriveArticleMeta>()
       : new Map(cloudIndex.map(a => [a.id, a]));
 
@@ -356,26 +358,33 @@ export async function pullFromCloud(): Promise<{ pulled: number; deleted: number
     // Compare local articles against the cloud index to handle:
     // 1. Remote deletions that the delta missed (e.g. deleted items with no name)
     // 2. Local-only articles that need pushing
+    //
+    // SAFETY: Only run the remote-deletion half when the cloud index is
+    // trustworthy (no download failures during delta). If metadata downloads
+    // failed, the cloud index is incomplete and we'd incorrectly delete
+    // local articles that are actually still on OneDrive.
     const finalCloudIndex = await getCloudIndex();
     const cloudIds = new Set(finalCloudIndex.map(a => a.id));
     let pushed = 0;
 
-    // Detect remote deletions: if a local article is NOT in the cloud index
-    // and was created more than 60 seconds ago (to avoid racing with a fresh save),
-    // it was deleted remotely — remove it locally.
+    const canReconcileDeletes = !delta.hasDownloadFailures && finalCloudIndex.length > 0;
+
     const now = Date.now();
     const FRESH_THRESHOLD_MS = 60_000;
     for (const local of localArticles) {
       if (!cloudIds.has(local.id)) {
         const age = now - local.createdAt;
         if (age > FRESH_THRESHOLD_MS) {
-          try {
-            await localDelete(local.id);
-            deleted++;
-            console.log('[Sync] Removed locally — deleted remotely:', local.id);
-          } catch (err) {
-            console.warn('[Sync] Failed to remove remotely-deleted article:', local.id, err);
+          if (canReconcileDeletes) {
+            try {
+              await localDelete(local.id);
+              deleted++;
+              console.log('[Sync] Removed locally — deleted remotely:', local.id);
+            } catch (err) {
+              console.warn('[Sync] Failed to remove remotely-deleted article:', local.id, err);
+            }
           }
+          // else: cloud index may be incomplete — don't delete
         } else {
           // Article is very new — assume it's a local create that hasn't been pushed yet
           try {
@@ -392,6 +401,9 @@ export async function pullFromCloud(): Promise<{ pulled: number; deleted: number
       }
     }
 
+    if (!canReconcileDeletes && localArticles.some(l => !cloudIds.has(l.id))) {
+      console.warn('[Sync] Skipped remote-deletion reconciliation — cloud index may be incomplete');
+    }
     if (pushed > 0) {
       console.log(`[Sync] Reconciliation pushed ${pushed} local-only articles to cloud`);
     }

@@ -102,15 +102,56 @@ function extractFavicon(): string | undefined {
 }
 
 function extractAuthor(): string | undefined {
+  // 1. meta[name="author"]
   const metaAuthor = document.querySelector('meta[name="author"]')?.getAttribute('content');
-  const ldJson = document.querySelector('script[type="application/ld+json"]');
-  if (ldJson) {
+  if (metaAuthor) return metaAuthor;
+
+  // 2. meta[property="article:author"] (Open Graph)
+  const ogAuthor = document.querySelector('meta[property="article:author"]')?.getAttribute('content');
+
+  // 3. LD+JSON — check all scripts, handle arrays and @graph
+  const ldScripts = document.querySelectorAll('script[type="application/ld+json"]');
+  for (const script of ldScripts) {
     try {
-      const data = JSON.parse(ldJson.textContent || '');
-      if (data.author?.name) return data.author.name;
-    } catch { /* ignore */ }
+      const data = JSON.parse(script.textContent || '');
+      const name = extractAuthorFromLdJson(data);
+      if (name) return name;
+    } catch { /* ignore malformed JSON */ }
   }
-  return metaAuthor || undefined;
+
+  return ogAuthor || undefined;
+}
+
+/**
+ * Dig author name out of a parsed LD+JSON blob.
+ * Handles object, array-of-objects, and @graph structures.
+ */
+function extractAuthorFromLdJson(data: Record<string, unknown>): string | undefined {
+  // Direct author field
+  const author = data.author as unknown;
+  if (author) {
+    if (typeof author === 'string') return author;
+    if (Array.isArray(author)) {
+      const first = author[0];
+      if (typeof first === 'string') return first;
+      if (first?.name) return first.name as string;
+    }
+    if (typeof author === 'object' && (author as Record<string, unknown>).name) {
+      return (author as Record<string, unknown>).name as string;
+    }
+  }
+
+  // @graph array (schema.org)
+  const graph = data['@graph'] as unknown[];
+  if (Array.isArray(graph)) {
+    for (const node of graph) {
+      if (node && typeof node === 'object') {
+        const name = extractAuthorFromLdJson(node as Record<string, unknown>);
+        if (name) return name;
+      }
+    }
+  }
+  return undefined;
 }
 
 function extractPublishDate(): string | undefined {

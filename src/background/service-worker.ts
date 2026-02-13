@@ -66,6 +66,25 @@ function stripEmptyBlockquotes(html: string): string {
 }
 
 /**
+ * Fix background-clipping bug in AI-generated HTML.
+ * The AI sometimes sets `html, body { height: 100% }` alongside
+ * `background-attachment: fixed` on body. This combination causes the
+ * background gradient to paint only within the initial viewport height
+ * and appear cut off on scroll. Replace `height: 100%` with
+ * `min-height: 100%` on html/body so the background extends with content.
+ */
+function fixBodyHeight(html: string): string {
+  // Match CSS rules whose selector is exactly html, body, html+body, or body+html
+  // (anchored after start-of-string, closing brace, newline, or semicolon to
+  // avoid matching compound selectors like `.foo body` or class names containing
+  // "body"). Rewrites `height: 100%` → `min-height: 100%`.
+  return html.replace(
+    /((?:^|[}\n;])\s*(?:(?:html|body)(?:\s*,\s*(?:html|body))?)\s*\{[^}]*?)\bheight(\s*:\s*100%)/gim,
+    (_match, before: string, value: string) => before + 'min-height' + value,
+  );
+}
+
+/**
  * Generate a unique request ID
  */
 function generateRequestId(): string {
@@ -505,8 +524,14 @@ async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
     case 'SYNC_SIGN_IN': {
       try {
         await signIn();
-        // Do an initial pull after sign-in
-        pullFromCloud().catch(err => console.error('[Sync] Initial pull failed:', err));
+        // Do an initial pull after sign-in — broadcast when done so Library refreshes
+        pullFromCloud()
+          .then(result => {
+            if (result.pulled > 0 || result.deleted > 0 || result.pushed > 0 || result.indexChanged > 0) {
+              broadcastArticlesChanged('sign-in-sync');
+            }
+          })
+          .catch(err => console.error('[Sync] Initial pull failed:', err));
         // On a new device with no settings, silently pull from OneDrive
         tryAutoImportSettingsFromCloud(downloadSettings).catch(err =>
           console.warn('[Sync] Auto-import settings failed:', err)
@@ -831,13 +856,15 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
 
   let finalHtml = sanitizeOutputHtml(aiResult.data.html);
 
-  // Resolve any relative URLs the AI carried through from the source
-  finalHtml = resolveRelativeUrls(finalHtml, tab.url || '');
-
   // Strip empty blockquotes the AI sometimes generates
   finalHtml = stripEmptyBlockquotes(finalHtml);
 
+  // Fix height: 100% on html/body that clips background gradients on scroll
+  finalHtml = fixBodyHeight(finalHtml);
+
   // Generate images if requested and AI returned image placeholders
+  // NOTE: Must happen BEFORE resolveRelativeUrls, which would URL-encode
+  // {{placeholder}} patterns and prevent them from being matched.
   if (generateImagesFlag && aiResult.data.images && aiResult.data.images.length > 0) {
     if (!await isImageConfiguredAsync()) {
       console.warn('[Transmogrifier] Image generation requested but not configured');
@@ -860,6 +887,10 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
       }
     }
   }
+
+  // Resolve any relative URLs the AI carried through from the source
+  // (after image replacement so {{placeholder}} patterns aren't mangled)
+  finalHtml = resolveRelativeUrls(finalHtml, tab.url || '');
 
   // Save to IndexedDB and open viewer
   await updateRemixProgress(requestId, { status: 'saving', step: 'Saving transmogrified page...' });
@@ -1007,13 +1038,15 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
   
   let finalHtml = sanitizeOutputHtml(aiResult.data.html);
 
-  // Resolve any relative URLs the AI carried through from the source
-  finalHtml = resolveRelativeUrls(finalHtml, originalArticle.originalUrl);
-
   // Strip empty blockquotes the AI sometimes generates
   finalHtml = stripEmptyBlockquotes(finalHtml);
 
+  // Fix height: 100% on html/body that clips background gradients on scroll
+  finalHtml = fixBodyHeight(finalHtml);
+
   // Generate images if requested
+  // NOTE: Must happen BEFORE resolveRelativeUrls, which would URL-encode
+  // {{placeholder}} patterns and prevent them from being matched.
   if (generateImagesFlag && aiResult.data.images && aiResult.data.images.length > 0 && await isImageConfiguredAsync()) {
     await updateRemixProgress(requestId, { 
       status: 'generating-images', 
@@ -1027,6 +1060,10 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
       console.error('[Transmogrifier] Image generation failed:', imgError);
     }
   }
+
+  // Resolve any relative URLs the AI carried through from the source
+  // (after image replacement so {{placeholder}} patterns aren't mangled)
+  finalHtml = resolveRelativeUrls(finalHtml, originalArticle.originalUrl);
   
   // Save as new article
   await updateRemixProgress(requestId, { status: 'saving', step: 'Saving new version...' });
