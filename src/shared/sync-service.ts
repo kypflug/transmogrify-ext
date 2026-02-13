@@ -237,13 +237,13 @@ export async function pushMetaUpdateToCloud(article: SavedArticle): Promise<void
  * Run a full delta sync: pull changes from OneDrive and merge locally
  * Returns the number of articles synced
  */
-export async function pullFromCloud(): Promise<{ pulled: number; deleted: number; pushed: number }> {
-  if (!(await isSignedIn())) return { pulled: 0, deleted: 0, pushed: 0 };
+export async function pullFromCloud(): Promise<{ pulled: number; deleted: number; pushed: number; indexChanged: number }> {
+  if (!(await isSignedIn())) return { pulled: 0, deleted: 0, pushed: 0, indexChanged: 0 };
 
   const state = await getSyncState();
   if (state.isSyncing) {
     console.log('[Sync] Already syncing, skipping');
-    return { pulled: 0, deleted: 0, pushed: 0 };
+    return { pulled: 0, deleted: 0, pushed: 0, indexChanged: 0 };
   }
 
   await setSyncState({ isSyncing: true, lastError: undefined });
@@ -254,6 +254,7 @@ export async function pullFromCloud(): Promise<{ pulled: number; deleted: number
     const localIds = new Set(localArticles.map(a => a.id));
     let pulled = 0;
     let deleted = 0;
+    let indexChanged = 0;
 
     // Load pending deletes — IDs we've deleted locally that may still appear
     // in the delta due to OneDrive's eventual consistency.
@@ -292,6 +293,9 @@ export async function pullFromCloud(): Promise<{ pulled: number; deleted: number
       } else {
         // New remote article — add to cloud index only (lazy download on open)
         // Don't count as "pulled" since content isn't downloaded yet
+        if (!cloudIndex.find(c => c.id === remoteMeta.id)) {
+          indexChanged++;
+        }
       }
     }
 
@@ -300,6 +304,10 @@ export async function pullFromCloud(): Promise<{ pulled: number; deleted: number
     // Process deletes
     const confirmedDeletes = new Set<string>();
     for (const deletedId of delta.deleted) {
+      // Track cloud-index-only removals for broadcast
+      if (!localIds.has(deletedId) && indexMap.has(deletedId)) {
+        indexChanged++;
+      }
       indexMap.delete(deletedId);
       confirmedDeletes.add(deletedId);
       if (localIds.has(deletedId)) {
@@ -331,6 +339,15 @@ export async function pullFromCloud(): Promise<{ pulled: number; deleted: number
 
     // Expire confirmed + old pending deletes
     await cleanupPendingDeletes(confirmedDeletes);
+
+    // Detect cloud-only articles that vanished during a full resync
+    const newIndexIds = new Set(Array.from(indexMap.keys()));
+    const oldCloudOnlyIds = cloudIndex.filter(c => !localIds.has(c.id)).map(c => c.id);
+    for (const oldId of oldCloudOnlyIds) {
+      if (!newIndexIds.has(oldId)) {
+        indexChanged++;
+      }
+    }
 
     await setCloudIndex(Array.from(indexMap.values()));
     await setSyncState({ lastSyncTime: Date.now(), isSyncing: false });
@@ -379,13 +396,13 @@ export async function pullFromCloud(): Promise<{ pulled: number; deleted: number
       console.log(`[Sync] Reconciliation pushed ${pushed} local-only articles to cloud`);
     }
 
-    console.log(`[Sync] Pull complete: ${pulled} pulled, ${deleted} deleted, ${pushed} reconciled`);
-    return { pulled, deleted, pushed };
+    console.log(`[Sync] Pull complete: ${pulled} pulled, ${deleted} deleted, ${pushed} reconciled, ${indexChanged} new cloud-only`);
+    return { pulled, deleted, pushed, indexChanged };
   } catch (err) {
     const errorMsg = String(err);
     console.error('[Sync] Pull failed:', errorMsg);
     await setSyncState({ isSyncing: false, lastError: errorMsg });
-    return { pulled: 0, deleted: 0, pushed: 0 };
+    return { pulled: 0, deleted: 0, pushed: 0, indexChanged: 0 };
   }
 }
 
@@ -523,7 +540,7 @@ export function setupSyncAlarm(): void {
     if (alarm.name === SYNC_ALARM_NAME) {
       pullFromCloud()
         .then(result => {
-          if (result.pulled > 0 || result.deleted > 0 || result.pushed > 0) {
+          if (result.pulled > 0 || result.deleted > 0 || result.pushed > 0 || result.indexChanged > 0) {
             // Notify open library/viewer pages that articles changed
             chrome.runtime.sendMessage({ type: 'ARTICLES_CHANGED', reason: 'sync' }).catch(() => {});
           }

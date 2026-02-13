@@ -56,6 +56,16 @@ const WARNING_THRESHOLD_MS = 2 * 60 * 1000;  // Show warning after 2 minutes
 const LONG_WARNING_THRESHOLD_MS = 5 * 60 * 1000;  // Stronger warning after 5 minutes
 
 /**
+ * Strip empty blockquotes from AI-generated HTML.
+ * The AI sometimes outputs `<blockquote></blockquote>` or blockquotes containing
+ * only whitespace / empty child elements when the extraction description duplicates
+ * the opening paragraph.
+ */
+function stripEmptyBlockquotes(html: string): string {
+  return html.replace(/<blockquote[^>]*>\s*(<p>\s*<\/p>\s*)*<\/blockquote>/gi, '');
+}
+
+/**
  * Generate a unique request ID
  */
 function generateRequestId(): string {
@@ -821,6 +831,9 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
 
   let finalHtml = sanitizeOutputHtml(aiResult.data.html);
 
+  // Strip empty blockquotes the AI sometimes generates
+  finalHtml = stripEmptyBlockquotes(finalHtml);
+
   // Generate images if requested and AI returned image placeholders
   if (generateImagesFlag && aiResult.data.images && aiResult.data.images.length > 0) {
     if (!await isImageConfiguredAsync()) {
@@ -990,6 +1003,9 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
   }
   
   let finalHtml = sanitizeOutputHtml(aiResult.data.html);
+
+  // Strip empty blockquotes the AI sometimes generates
+  finalHtml = stripEmptyBlockquotes(finalHtml);
   
   // Generate images if requested
   if (generateImagesFlag && aiResult.data.images && aiResult.data.images.length > 0 && await isImageConfiguredAsync()) {

@@ -802,10 +802,6 @@ export function serializeContent(content: ExtractedContent): string {
     '',
   ];
 
-  if (content.description) {
-    lines.push(`> ${content.description}`, '');
-  }
-
   if (content.author || content.publishDate) {
     const meta = [content.author, content.publishDate].filter(Boolean).join(' Ã¢â‚¬Â¢ ');
     lines.push(`*${meta}*`, '');
