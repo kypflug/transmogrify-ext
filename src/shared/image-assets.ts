@@ -74,6 +74,9 @@ export async function persistArticleImages(
     if (asset.originalUrl) {
       updatedTag = setAttr(updatedTag, IMAGE_ATTR_SRC, asset.originalUrl);
     }
+    // Replace the (potentially multi-MB) data: URL with a compact tmg-asset: reference.
+    // Library viewers resolve this from OneDrive; shared viewers rewrite to blob HTTP URLs.
+    updatedTag = setAttr(updatedTag, 'src', `tmg-asset:${asset.id}`);
     resultHtml = resultHtml.replace(imgTag, updatedTag);
   }
 
@@ -124,6 +127,13 @@ function findImageAsset(
   if (assetId && assetsById.has(assetId)) return assetsById.get(assetId);
 
   const src = img.getAttribute('src');
+
+  // Match tmg-asset:{assetId} scheme — extract the ID and look up directly
+  if (src?.startsWith('tmg-asset:')) {
+    const id = src.slice('tmg-asset:'.length);
+    if (assetsById.has(id)) return assetsById.get(id);
+  }
+
   if (src && assetsBySrc.has(src)) return assetsBySrc.get(src);
 
   const originalSrc = img.getAttribute(IMAGE_ATTR_SRC);

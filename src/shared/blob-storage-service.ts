@@ -1,8 +1,8 @@
 /**
  * Blob Storage Service for Transmogrifier (BYOS — Bring Your Own Storage)
  *
- * Uploads/deletes shared article HTML to the user's own Azure Blob Storage account.
- * Uses the Azure Blob REST API with SAS token authentication — no SDK needed.
+ * Orchestrates article sharing using pure blob helpers from @kypflug/transmogrifier-core.
+ * Platform-specific concerns (auth, settings, OneDrive download) are injected via imports.
  *
  * Flow:
  *  1. Upload article HTML to user's blob container
@@ -12,120 +12,28 @@
 
 import { getEffectiveSharingConfig, getEffectiveCloudUrl } from './settings-service';
 import { getAccessToken } from './auth-service';
+import { downloadArticleAsset } from './onedrive-service';
+import {
+  type AzureBlobConfig,
+  type ShareResult,
+  type OneDriveImageAsset,
+  uploadHtmlBlob,
+  deleteHtmlBlob,
+  uploadImageBlob,
+  imageBlobUrl,
+  deleteImageBlobs,
+  validateBlobConfig,
+  injectOGTags,
+  rewriteTmgAssetUrls,
+} from '@kypflug/transmogrifier-core';
 
-export interface AzureBlobConfig {
-  accountName: string;
-  containerName: string;
-  sasToken: string;
-}
-
-export interface ShareResult {
-  shareUrl: string;      // transmogrifia.app/shared/{code}
-  blobUrl: string;       // raw blob URL
-  shortCode: string;     // short code for unsharing
-}
-
-/**
- * Build the blob URL for an article.
- */
-function getBlobUrl(config: AzureBlobConfig, articleId: string): string {
-  return `https://${config.accountName}.blob.core.windows.net/${config.containerName}/${articleId}.html`;
-}
-
-/**
- * Build the SAS-authenticated URL for blob operations.
- */
-function getBlobUrlWithSas(config: AzureBlobConfig, articleId: string): string {
-  const sasToken = config.sasToken.startsWith('?') ? config.sasToken : `?${config.sasToken}`;
-  return `${getBlobUrl(config, articleId)}${sasToken}`;
-}
-
-/**
- * Inject OpenGraph meta tags into the article HTML for social media previews.
- */
-function injectOGTags(html: string, title: string, shareUrl: string): string {
-  const description = 'A transmogrified article — beautiful web content, reimagined.';
-
-  const ogTags = `
-    <meta property="og:title" content="${escapeAttr(title)}">
-    <meta property="og:description" content="${escapeAttr(description)}">
-    <meta property="og:url" content="${escapeAttr(shareUrl)}">
-    <meta property="og:type" content="article">
-    <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="${escapeAttr(title)}">
-    <meta name="twitter:description" content="${escapeAttr(description)}">
-  `;
-
-  // Insert before </head> if present, otherwise before </html> or at the start
-  if (html.includes('</head>')) {
-    return html.replace('</head>', `${ogTags}</head>`);
-  } else if (html.includes('<head>')) {
-    return html.replace('<head>', `<head>${ogTags}`);
-  }
-  return ogTags + html;
-}
-
-function escapeAttr(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-/**
- * Upload article HTML to user's Azure Blob Storage.
- * Returns the public blob URL.
- */
-async function uploadToBlob(
-  html: string,
-  articleId: string,
-  config: AzureBlobConfig,
-): Promise<string> {
-  const uploadUrl = getBlobUrlWithSas(config, articleId);
-
-  const response = await fetch(uploadUrl, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'text/html; charset=utf-8',
-      'x-ms-blob-type': 'BlockBlob',
-      'x-ms-version': '2024-11-04',
-    },
-    body: html,
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Blob upload failed (${response.status}): ${text}`);
-  }
-
-  return getBlobUrl(config, articleId);
-}
-
-/**
- * Delete an article blob from storage.
- */
-async function deleteFromBlob(
-  articleId: string,
-  config: AzureBlobConfig,
-): Promise<void> {
-  const deleteUrl = getBlobUrlWithSas(config, articleId);
-
-  const response = await fetch(deleteUrl, {
-    method: 'DELETE',
-    headers: {
-      'x-ms-version': '2024-11-04',
-    },
-  });
-
-  // 202 or 404 are both fine (already deleted)
-  if (!response.ok && response.status !== 404) {
-    const text = await response.text();
-    throw new Error(`Blob delete failed (${response.status}): ${text}`);
-  }
-}
+export type { AzureBlobConfig, ShareResult } from '@kypflug/transmogrifier-core';
 
 /**
  * Register a short link via the cloud function.
  */
 async function registerShortLink(
-  blobUrl: string,
+  resultBlobUrl: string,
   title: string,
   accessToken: string,
   cloudUrl: string,
@@ -135,7 +43,7 @@ async function registerShortLink(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      blobUrl,
+      blobUrl: resultBlobUrl,
       title,
       accessToken,
       ...(expiresAt ? { expiresAt } : {}),
@@ -172,9 +80,62 @@ async function deleteShortLink(
   }
 }
 
+// ─── Image Blob Sidecar ──────────────────────────────────────────────────────
+
+/** Max images uploaded concurrently to blob storage */
+const IMAGE_UPLOAD_CONCURRENCY = 3;
+
+/**
+ * Upload article images to blob storage and rewrite tmg-asset: references
+ * in the HTML to direct HTTP blob URLs.
+ */
+async function uploadImagesToBlob(
+  html: string,
+  articleId: string,
+  images: OneDriveImageAsset[],
+  config: AzureBlobConfig,
+): Promise<string> {
+  const assetsById = new Map(images.map(a => [a.id, a]));
+
+  // Find all tmg-asset: references in the HTML
+  const tmgPattern = /tmg-asset:([a-f0-9]+)/g;
+  const assetIds = new Set<string>();
+  let match: RegExpExecArray | null;
+  while ((match = tmgPattern.exec(html)) !== null) {
+    assetIds.add(match[1]);
+  }
+
+  if (assetIds.size === 0) return html;
+
+  // Upload images in batches with concurrency control
+  const idArray = Array.from(assetIds);
+  const urlMap = new Map<string, string>();
+
+  for (let i = 0; i < idArray.length; i += IMAGE_UPLOAD_CONCURRENCY) {
+    const batch = idArray.slice(i, i + IMAGE_UPLOAD_CONCURRENCY);
+    await Promise.all(batch.map(async (assetId) => {
+      const asset = assetsById.get(assetId);
+      if (!asset) return;
+
+      try {
+        const blob = await downloadArticleAsset(asset.drivePath);
+        const fileName = asset.drivePath.split('/').pop() || `${assetId}.bin`;
+        await uploadImageBlob(blob, articleId, fileName, asset.contentType || 'application/octet-stream', config);
+        urlMap.set(assetId, imageBlobUrl(config, articleId, fileName));
+      } catch (err) {
+        console.warn(`[Share] Failed to upload image ${assetId}:`, err);
+      }
+    }));
+  }
+
+  return rewriteTmgAssetUrls(html, urlMap);
+}
+
 /**
  * Share an article publicly.
  * Uploads HTML to blob storage and registers a short link.
+ * If the article has OneDrive image assets, uploads them as separate blobs
+ * and rewrites tmg-asset: references to direct HTTP blob URLs.
  *
  * Requires:
  * - BYOS (sharing) config in settings
@@ -185,6 +146,7 @@ export async function shareArticle(
   html: string,
   title: string,
   expiresAt?: number,
+  images?: OneDriveImageAsset[],
 ): Promise<ShareResult> {
   const config = await getEffectiveSharingConfig();
   if (!config) {
@@ -198,26 +160,32 @@ export async function shareArticle(
 
   const cloudUrl = await getEffectiveCloudUrl();
 
-  // 1. Inject OG tags and upload to blob
-  const shareUrlPlaceholder = 'https://transmogrifia.app/shared/'; // will be updated with actual code
-  const htmlWithOG = injectOGTags(html, title, shareUrlPlaceholder);
-  const blobUrl = await uploadToBlob(htmlWithOG, articleId, config);
+  // 1. Upload image assets to blob storage and rewrite tmg-asset: → HTTP URLs
+  let shareHtml = html;
+  if (images && images.length > 0) {
+    shareHtml = await uploadImagesToBlob(shareHtml, articleId, images, config);
+  }
 
-  // 2. Register short link
+  // 2. Inject OG tags and upload to blob
+  const shareUrlPlaceholder = 'https://transmogrifia.app/shared/';
+  const htmlWithOG = injectOGTags(shareHtml, title, shareUrlPlaceholder);
+  const resultBlobUrl = await uploadHtmlBlob(htmlWithOG, articleId, config);
+
+  // 3. Register short link
   const { shortCode, shareUrl } = await registerShortLink(
-    blobUrl,
+    resultBlobUrl,
     title,
     accessToken,
     cloudUrl,
     expiresAt,
   );
 
-  return { shareUrl, blobUrl, shortCode };
+  return { shareUrl, blobUrl: resultBlobUrl, shortCode };
 }
 
 /**
  * Unshare an article.
- * Deletes the blob and the short link.
+ * Deletes the blob, image blobs, and the short link.
  */
 export async function unshareArticle(
   articleId: string,
@@ -231,7 +199,8 @@ export async function unshareArticle(
   const promises: Promise<void>[] = [];
 
   if (config) {
-    promises.push(deleteFromBlob(articleId, config));
+    promises.push(deleteHtmlBlob(articleId, config));
+    promises.push(deleteImageBlobs(articleId, config));
   }
 
   if (accessToken && shortCode) {
@@ -245,21 +214,5 @@ export async function unshareArticle(
  * Validate the sharing configuration by checking if the container is accessible.
  */
 export async function validateSharingConfig(config: AzureBlobConfig): Promise<{ valid: boolean; error?: string }> {
-  try {
-    const sasToken = config.sasToken.startsWith('?') ? config.sasToken : `?${config.sasToken}`;
-    const url = `https://${config.accountName}.blob.core.windows.net/${config.containerName}?restype=container&comp=list&maxresults=1${sasToken.replace('?', '&')}`;
-
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: { 'x-ms-version': '2024-11-04' },
-    });
-
-    if (response.ok) {
-      return { valid: true };
-    }
-
-    return { valid: false, error: `Container check failed (${response.status}): ${response.statusText}` };
-  } catch (err) {
-    return { valid: false, error: `Connection failed: ${err instanceof Error ? err.message : String(err)}` };
-  }
+  return validateBlobConfig(config);
 }

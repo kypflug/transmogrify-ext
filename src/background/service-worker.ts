@@ -7,7 +7,7 @@
 import { RemixMessage, RemixResponse, GeneratedImageData, RemixRequest } from '../shared/types';
 import { loadPreferences, savePreferences } from '../shared/utils';
 import { analyzeWithAI } from '../shared/ai-service';
-import { getRecipe, BUILT_IN_RECIPES } from '@kypflug/transmogrifier-core';
+import { getRecipe, BUILT_IN_RECIPES, sanitizeOutputHtml } from '@kypflug/transmogrifier-core';
 import type { ImagePlaceholder } from '@kypflug/transmogrifier-core';
 import { generateImages, base64ToDataUrl, ImageGenerationRequest } from '../shared/image-service';
 import { isImageConfiguredAsync } from '../shared/config';
@@ -658,6 +658,7 @@ async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
           article.html,
           article.title,
           message.payload?.expiresAt,
+          article.images,
         );
 
         return {
@@ -1123,16 +1124,4 @@ function replaceImagePlaceholders(html: string, images: GeneratedImageData[]): s
   return result;
 }
 
-/**
- * Strip HTML elements that are incompatible with our sandboxed viewer / CSP.
- * - <iframe>: blocked by extension CSP (frame-src) and sandbox restrictions
- * - <object>/<embed>: plugin content, same CSP issue
- */
-function sanitizeOutputHtml(html: string): string {
-  // Remove <iframe ...>...</iframe> and self-closing <iframe .../>
-  return html
-    .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, '')
-    .replace(/<iframe\b[^>]*\/>/gi, '')
-    .replace(/<object\b[^>]*>[\s\S]*?<\/object>/gi, '')
-    .replace(/<embed\b[^>]*\/?>/gi, '');
-}
+

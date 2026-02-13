@@ -4,6 +4,8 @@
  * Focuses on CONTENT not DOM structure
  */
 
+import { isContentIframe } from '@kypflug/transmogrifier-core';
+
 export interface ExtractedContent {
   title: string;
   description?: string;
@@ -309,12 +311,13 @@ function elementToBlock(el: HTMLElement, processed: Set<Element>): ContentBlock 
   // Images
   if (tag === 'img') {
     const img = el as HTMLImageElement;
-    if (img.src && !img.src.includes('data:') && img.width > 100) {
+    const resolvedSrc = resolveImageSrc(img);
+    if (resolvedSrc && !resolvedSrc.includes('data:') && img.width > 100) {
       processed.add(el);
       return {
         type: 'image',
         content: '',
-        src: img.src,
+        src: resolvedSrc,
         alt: img.alt || '',
         caption: findCaption(el),
       };
@@ -325,16 +328,19 @@ function elementToBlock(el: HTMLElement, processed: Set<Element>): ContentBlock 
   if (tag === 'figure') {
     const img = el.querySelector('img') as HTMLImageElement;
     const caption = el.querySelector('figcaption')?.textContent?.trim();
-    if (img?.src) {
-      processed.add(el);
-      el.querySelectorAll('*').forEach(child => processed.add(child));
-      return {
-        type: 'image',
-        content: '',
-        src: img.src,
-        alt: img.alt || '',
-        caption: caption,
-      };
+    if (img) {
+      const resolvedSrc = resolveImageSrc(img);
+      if (resolvedSrc) {
+        processed.add(el);
+        el.querySelectorAll('*').forEach(child => processed.add(child));
+        return {
+          type: 'image',
+          content: '',
+          src: resolvedSrc,
+          alt: img.alt || '',
+          caption: caption,
+        };
+      }
     }
   }
 
@@ -584,48 +590,70 @@ function findCaption(img: HTMLElement): string | undefined {
   return undefined;
 }
 
-/**
- * Check whether an iframe src is content (video, demo, interactive)
- * vs non-content (ads, trackers, social widgets, etc.)
- */
-function isContentIframe(src: string): boolean {
-  const contentDomains = [
-    'youtube.com', 'youtube-nocookie.com', 'youtu.be',
-    'vimeo.com', 'player.vimeo.com',
-    'dailymotion.com',
-    'codepen.io',
-    'jsfiddle.net',
-    'codesandbox.io', 'stackblitz.com',
-    'observable.com', 'observablehq.com',
-    'glitch.com',
-    'replit.com',
-    'figma.com',
-    'docs.google.com', 'drive.google.com',
-    'google.com/maps', 'maps.google.com',
-    'openstreetmap.org',
-    'soundcloud.com',
-    'spotify.com',
-    'bandcamp.com',
-    'archive.org',
-    'ted.com',
-    'loom.com',
-    'wistia.com', 'fast.wistia.net',
-    'twitch.tv', 'player.twitch.tv',
-    'streamable.com',
-    'giphy.com',
-    'datawrapper.dwcdn.net',
-    'flourish.studio', 'flo.uri.sh',
-    'tableau.com',
-    'd3js.org',
-  ];
+/** Lazy-loading data attributes, in priority order. */
+const LAZY_SRC_ATTRS = [
+  'data-src',
+  'data-lazy-src',
+  'data-original',
+  'data-hi-res-src',
+  'data-actualsrc',
+  'data-delayed-url',
+];
 
-  try {
-    const url = new URL(src);
-    return contentDomains.some(domain => url.hostname.includes(domain));
-  } catch {
-    return false;
+/** Known placeholder/tracking-pixel URL patterns. */
+const PLACEHOLDER_PATTERNS = [
+  /\/static\/\d+x\d+/i,
+  /\/1x1\./i,
+  /\/blank\./i,
+  /\/placeholder/i,
+  /\/spacer\./i,
+  /\/pixel\./i,
+  /\/grey\./i,
+  /\/transparent\./i,
+];
+
+/**
+ * Resolve the best available image URL for an <img> element.
+ *
+ * The extension runs in-browser, so `img.src` is the resolved property.
+ * However, lazy-loaded images below the fold may not have had their
+ * IntersectionObserver triggered, leaving `src` as a placeholder pixel.
+ * This helper checks data attributes and srcset for the real URL.
+ *
+ * Returns the best URL found, or null if the image should be skipped.
+ */
+function resolveImageSrc(img: HTMLImageElement): string | null {
+  const src = img.src;
+
+  // Check if the current src looks like a placeholder
+  const isPlaceholder = !src
+    || src.includes('data:')
+    || img.naturalWidth <= 1
+    || PLACEHOLDER_PATTERNS.some(p => p.test(src));
+
+  if (isPlaceholder) {
+    // Try lazy-loading data attributes
+    for (const attr of LAZY_SRC_ATTRS) {
+      const val = img.getAttribute(attr)?.trim();
+      if (val && (val.startsWith('http') || val.startsWith('/'))) return val;
+    }
+
+    // Try srcset / data-srcset — take the first URL
+    const srcset = img.getAttribute('data-srcset') || img.getAttribute('srcset');
+    if (srcset) {
+      const first = srcset.trim().split(/\s*,\s*/)[0];
+      const url = first?.trim().split(/\s+/)[0];
+      if (url && (url.startsWith('http') || url.startsWith('/'))) return url;
+    }
+
+    // No lazy source found
+    return null;
   }
+
+  return src;
 }
+
+
 
 function detectCodeLanguage(el: HTMLElement): string | undefined {
   // Check class for language hints

@@ -8,9 +8,7 @@
 
 import { resolveImageConfig, AzureImageConfig, OpenAIImageConfig, GoogleImageConfig, ImageConfig } from './config';
 import {
-  generateAzureImage as coreGenerateAzureImage,
-  generateOpenAIImage as coreGenerateOpenAIImage,
-  generateGoogleImage as coreGenerateGoogleImage,
+  dispatchImageCall,
   base64ToDataUrl,
 } from '@kypflug/transmogrifier-core';
 import type { ImageGenerationRequest, GeneratedImage } from '@kypflug/transmogrifier-core';
@@ -75,14 +73,5 @@ async function generateSingleImageWithConfig(
   request: ImageGenerationRequest,
   id: string
 ): Promise<GeneratedImage> {
-  switch (config.provider) {
-    case 'azure-openai':
-      return coreGenerateAzureImage(config as AzureImageConfig, request, id);
-    case 'openai':
-      return coreGenerateOpenAIImage(config as OpenAIImageConfig, request, id);
-    case 'google':
-      return coreGenerateGoogleImage(config as GoogleImageConfig, request, id);
-    case 'none':
-      return { id, error: 'Image generation is disabled' };
-  }
+  return dispatchImageCall(config, request, id);
 }

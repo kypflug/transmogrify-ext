@@ -7,16 +7,10 @@
  * abort signal handling, and the AIServiceResponse wrapper.
  */
 
-import { resolveAIConfig, getProviderDisplayName, AzureOpenAIConfig, OpenAIConfig, AnthropicConfig, GoogleConfig } from './config';
-import { buildPrompt, parseAIResponse } from '@kypflug/transmogrifier-core';
+import { resolveAIConfig, getProviderDisplayName, AzureOpenAIConfig } from './config';
+import { buildPrompt, parseAIResponse, dispatchAICall } from '@kypflug/transmogrifier-core';
 import type { AIResponse, Recipe } from '@kypflug/transmogrifier-core';
-import {
-  callAzureOpenAI,
-  callOpenAI,
-  callAnthropic,
-  callGoogle,
-} from '@kypflug/transmogrifier-core';
-import type { ProviderResult } from '@kypflug/transmogrifier-core';
+import type { AIConfig } from '@kypflug/transmogrifier-core';
 
 export interface AIRequestOptions {
   recipe: Recipe;
@@ -89,22 +83,7 @@ export async function analyzeWithAI(options: AIRequestOptions): Promise<AIServic
   }
 
   try {
-    let result: ProviderResult;
-
-    switch (effectiveConfig.provider) {
-      case 'azure-openai':
-        result = await callAzureOpenAI(effectiveConfig as AzureOpenAIConfig, system, user, maxTokens, controller.signal);
-        break;
-      case 'openai':
-        result = await callOpenAI(effectiveConfig as OpenAIConfig, system, user, maxTokens, controller.signal);
-        break;
-      case 'anthropic':
-        result = await callAnthropic(effectiveConfig as AnthropicConfig, system, user, maxTokens, controller.signal);
-        break;
-      case 'google':
-        result = await callGoogle(effectiveConfig as GoogleConfig, system, user, maxTokens, controller.signal);
-        break;
-    }
+    const result = await dispatchAICall(effectiveConfig as AIConfig, system, user, maxTokens, controller.signal);
     
     const elapsed = Date.now() - startTime;
     console.log('[Transmogrifier] Response received in', (elapsed / 1000).toFixed(1), 'seconds');
