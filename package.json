@@ -9,9 +9,6 @@
     "lint": "eslint src --ext .ts",
     "clean": "rimraf dist"
   },
-  "dependencies": {
-    "@kypflug/transmogrifier-core": "^0.1.14"
-  },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.0.0-beta.28",
     "@eslint/js": "^9.19.0",
@@ -32,5 +29,8 @@
     "reading-mode",
     "dom-manipulation"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@kypflug/transmogrifier-core": "^0.1.20"
+  }
 }

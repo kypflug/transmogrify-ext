@@ -15,6 +15,7 @@ import {
   deleteRemoteArticle,
   downloadArticleContent,
   getDelta,
+  resetDeltaToken,
   type OneDriveArticleMeta,
 } from './onedrive-service';
 import { persistArticleImages } from './image-assets';
@@ -221,8 +222,9 @@ export async function pushMetaUpdateToCloud(article: SavedArticle): Promise<void
     });
 
     // Only re-upload metadata, not content
-    const { uploadArticleMeta } = await import('./onedrive-service');
-    await uploadArticleMeta(article.id, meta);
+    const { uploadArticleMeta, getArticleMetaETag } = await import('./onedrive-service');
+    const eTag = await getArticleMetaETag(article.id);
+    await uploadArticleMeta(article.id, meta, eTag ?? undefined);
 
     // Don't update cloud index on push — let the next pull/delta discover it
     console.log('[Sync] Pushed meta update to cloud:', article.id);
@@ -249,6 +251,14 @@ export async function pullFromCloud(): Promise<{ pulled: number; deleted: number
   await setSyncState({ isSyncing: true, lastError: undefined });
 
   try {
+    // If it's been over an hour since last sync, clear the delta token
+    // to force a full resync — the token may have expired server-side
+    const STALE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
+    if (state.lastSyncTime > 0 && (Date.now() - state.lastSyncTime) > STALE_THRESHOLD_MS) {
+      await resetDeltaToken();
+      console.log('[Sync] Delta token cleared — last sync was >1h ago');
+    }
+
     const delta = await getDelta();
     const localArticles = await getAllArticles();
     const localIds = new Set(localArticles.map(a => a.id));

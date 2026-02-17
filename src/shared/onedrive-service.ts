@@ -79,7 +79,7 @@ async function ensureFolder(): Promise<void> {
   // Try to get the folder — Graph auto-creates approot on first access
   const res = await fetch(
     `${GRAPH_BASE}/me/drive/special/approot:/${APP_FOLDER}`,
-    { headers }
+    { headers, cache: 'no-store' as RequestCache }
   );
 
   if (res.ok) return;
@@ -96,6 +96,7 @@ async function ensureFolder(): Promise<void> {
           folder: {},
           '@microsoft.graph.conflictBehavior': 'fail',
         }),
+        cache: 'no-store' as RequestCache,
       }
     );
 
@@ -116,7 +117,7 @@ async function ensureFolderPath(segments: string[]): Promise<void> {
     const targetPath = currentPath ? `${currentPath}/${segment}` : segment;
     const res = await fetch(
       `${GRAPH_BASE}/me/drive/special/approot:/${targetPath}`,
-      { headers }
+      { headers, cache: 'no-store' as RequestCache }
     );
 
     if (res.ok) {
@@ -138,6 +139,7 @@ async function ensureFolderPath(segments: string[]): Promise<void> {
             folder: {},
             '@microsoft.graph.conflictBehavior': 'fail',
           }),
+          cache: 'no-store' as RequestCache,
         }
       );
 
@@ -171,6 +173,7 @@ export async function uploadBinaryToAppPath(
         'Content-Type': contentType,
       },
       body: data,
+      cache: 'no-store' as RequestCache,
     }
   );
 
@@ -198,6 +201,7 @@ export async function uploadArticleContent(id: string, html: string): Promise<vo
           'Content-Type': 'text/html',
         },
         body: blob,
+        cache: 'no-store' as RequestCache,
       }
     );
 
@@ -211,24 +215,97 @@ export async function uploadArticleContent(id: string, html: string): Promise<vo
 }
 
 /**
- * Upload article metadata JSON to OneDrive
+ * Get the ETag for an article's metadata file on OneDrive.
+ * Returns null if the file doesn't exist.
  */
-export async function uploadArticleMeta(id: string, meta: OneDriveArticleMeta): Promise<void> {
+export async function getArticleMetaETag(id: string): Promise<string | null> {
+  const headers = await authHeaders();
+  const res = await fetch(
+    `${GRAPH_BASE}/me/drive/special/approot:/${APP_FOLDER}/${id}.json`,
+    { method: 'GET', headers, cache: 'no-store' as RequestCache }
+  );
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.eTag || null;
+}
+
+/**
+ * Upload article metadata JSON to OneDrive.
+ * If eTag is provided, uses If-Match for conflict detection.
+ * On 412 (Precondition Failed), re-downloads remote meta, merges, and retries once.
+ */
+export async function uploadArticleMeta(
+  id: string,
+  meta: OneDriveArticleMeta,
+  eTag?: string,
+): Promise<void> {
   await ensureFolder();
   const headers = await authHeaders();
   const json = JSON.stringify(meta, null, 2);
+
+  const reqHeaders: Record<string, string> = {
+    ...headers,
+    'Content-Type': 'application/json',
+  };
+  if (eTag) {
+    reqHeaders['If-Match'] = eTag;
+  }
 
   const res = await fetch(
     `${GRAPH_BASE}/me/drive/special/approot:/${APP_FOLDER}/${id}.json:/content`,
     {
       method: 'PUT',
-      headers: {
-        ...headers,
-        'Content-Type': 'application/json',
-      },
+      headers: reqHeaders,
       body: json,
+      cache: 'no-store' as RequestCache,
     }
   );
+
+  if (res.status === 412 && eTag) {
+    // Conflict — re-download, merge, retry without ETag (last-write-wins fallback)
+    console.warn('[OneDrive] ETag conflict on meta upload, merging:', id);
+    try {
+      const remoteMeta = await downloadArticleMeta(id);
+      const merged: OneDriveArticleMeta = {
+        ...remoteMeta,
+        ...meta,
+        // OR-merge favorites so neither side loses a star
+        isFavorite: meta.isFavorite || remoteMeta.isFavorite,
+        // Take the latest timestamp
+        updatedAt: Math.max(meta.updatedAt, remoteMeta.updatedAt),
+      };
+      const mergedJson = JSON.stringify(merged, null, 2);
+      const retryRes = await fetch(
+        `${GRAPH_BASE}/me/drive/special/approot:/${APP_FOLDER}/${id}.json:/content`,
+        {
+          method: 'PUT',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: mergedJson,
+          cache: 'no-store' as RequestCache,
+        }
+      );
+      if (!retryRes.ok) {
+        throw new Error(`Merge retry upload failed (${retryRes.status}): ${retryRes.statusText}`);
+      }
+      console.log('[OneDrive] Merged meta upload succeeded:', id);
+    } catch (mergeErr) {
+      console.error('[OneDrive] Merge fallback failed, doing unconditional PUT:', mergeErr);
+      // Final fallback — unconditional PUT (last-write-wins)
+      const fallbackRes = await fetch(
+        `${GRAPH_BASE}/me/drive/special/approot:/${APP_FOLDER}/${id}.json:/content`,
+        {
+          method: 'PUT',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: json,
+          cache: 'no-store' as RequestCache,
+        }
+      );
+      if (!fallbackRes.ok) {
+        throw new Error(`Fallback upload failed (${fallbackRes.status}): ${fallbackRes.statusText}`);
+      }
+    }
+    return;
+  }
 
   if (!res.ok) {
     throw new Error(`Upload metadata failed (${res.status}): ${res.statusText}`);
@@ -258,7 +335,7 @@ export async function downloadArticleContent(id: string): Promise<string> {
   const headers = await authHeaders();
   const res = await fetch(
     `${GRAPH_BASE}/me/drive/special/approot:/${APP_FOLDER}/${id}.html:/content`,
-    { headers }
+    { headers, cache: 'no-store' as RequestCache }
   );
 
   if (!res.ok) {
@@ -275,7 +352,7 @@ export async function downloadArticleMeta(id: string): Promise<OneDriveArticleMe
   const headers = await authHeaders();
   const res = await fetch(
     `${GRAPH_BASE}/me/drive/special/approot:/${APP_FOLDER}/${id}.json:/content`,
-    { headers }
+    { headers, cache: 'no-store' as RequestCache }
   );
   if (!res.ok) {
     throw new Error(`Download metadata failed (${res.status}): ${res.statusText}`);
@@ -295,14 +372,17 @@ export async function deleteRemoteArticle(id: string): Promise<void> {
     fetch(`${GRAPH_BASE}/me/drive/special/approot:/${APP_FOLDER}/${id}.html`, {
       method: 'DELETE',
       headers,
+      cache: 'no-store' as RequestCache,
     }),
     fetch(`${GRAPH_BASE}/me/drive/special/approot:/${APP_FOLDER}/${id}.json`, {
       method: 'DELETE',
       headers,
+      cache: 'no-store' as RequestCache,
     }),
     fetch(`${GRAPH_BASE}/me/drive/special/approot:/${APP_FOLDER}/${id}`, {
       method: 'DELETE',
       headers,
+      cache: 'no-store' as RequestCache,
     }),
   ]);
 
@@ -332,7 +412,7 @@ export async function listRemoteArticles(): Promise<{ metas: OneDriveArticleMeta
   let url: string | null = `${GRAPH_BASE}/me/drive/special/approot:/${APP_FOLDER}:/children?$select=name&$top=200`;
 
   while (url) {
-    const res = await fetch(url, { headers });
+    const res = await fetch(url, { headers, cache: 'no-store' as RequestCache });
     if (!res.ok) {
       if (res.status === 404) return { metas: [], hasFailures: false }; // folder doesn't exist yet
       throw new Error(`List articles failed: ${res.statusText}`);
@@ -344,6 +424,7 @@ export async function listRemoteArticles(): Promise<{ metas: OneDriveArticleMeta
     for (const item of data.value || []) {
       const name: string = item.name;
       if (!name.endsWith('.json')) continue;
+      if (name.startsWith('_')) continue; // skip internal files like _index.json
       const id = name.replace('.json', '');
       try {
         const meta = await downloadArticleMeta(id);
@@ -383,7 +464,7 @@ export async function getDelta(): Promise<DeltaResult> {
 
   // Follow pagination
   while (url) {
-    const res = await fetch(url, { headers });
+    const res = await fetch(url, { headers, cache: 'no-store' as RequestCache });
 
     if (!res.ok) {
       if (res.status === 404 || res.status === 410) {
@@ -402,6 +483,7 @@ export async function getDelta(): Promise<DeltaResult> {
 
       if (item.deleted || item['@removed']) {
         // Deleted items may lack a name — extract ID from whatever we have
+        if (name.startsWith('_')) continue; // skip internal files like _index.json
         if (name.endsWith('.json')) {
           deleted.push(name.replace('.json', ''));
         } else if (name.endsWith('.html')) {
@@ -412,6 +494,7 @@ export async function getDelta(): Promise<DeltaResult> {
       } else {
         // Only process .json metadata files for upserts
         if (!name.endsWith('.json')) continue;
+        if (name.startsWith('_')) continue; // skip internal files like _index.json
 
         const id = name.replace('.json', '');
         // Use @microsoft.graph.downloadUrl if available (avoids extra API call)
@@ -419,7 +502,7 @@ export async function getDelta(): Promise<DeltaResult> {
         try {
           let meta: OneDriveArticleMeta;
           if (directUrl) {
-            const res = await fetch(directUrl);
+            const res = await fetch(directUrl, { cache: 'no-store' as RequestCache });
             if (!res.ok) throw new Error(`Direct download failed: ${res.status}`);
             meta = await res.json();
           } else {
@@ -475,6 +558,7 @@ async function uploadLargeFile(
       body: JSON.stringify({
         item: { '@microsoft.graph.conflictBehavior': 'replace' },
       }),
+      cache: 'no-store' as RequestCache,
     }
   );
 
@@ -531,6 +615,7 @@ export async function uploadSettings(encryptedJson: string): Promise<void> {
         'Content-Type': 'application/json',
       },
       body: encryptedJson,
+      cache: 'no-store' as RequestCache,
     }
   );
 
@@ -550,7 +635,7 @@ export async function downloadSettings(): Promise<string | null> {
 
   const res = await fetch(
     `${GRAPH_BASE}/me/drive/special/approot:/${SETTINGS_FILE}:/content`,
-    { headers }
+    { headers, cache: 'no-store' as RequestCache }
   );
 
   if (res.status === 404) {
@@ -572,7 +657,7 @@ export async function downloadArticleAsset(drivePath: string): Promise<Blob> {
   const headers = await authHeaders();
   const res = await fetch(
     `${GRAPH_BASE}/me/drive/special/approot:/${drivePath}:/content`,
-    { headers }
+    { headers, cache: 'no-store' as RequestCache }
   );
 
   if (!res.ok) {
