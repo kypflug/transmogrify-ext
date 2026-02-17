@@ -6,6 +6,7 @@ All notable changes to Transmogrifier will be documented in this file.
 
 ### Added
 - **Gift token redemption** — Settings screen has a "Gift Token" section where users can enter a passphrase from a friend to import preconfigured AI/cloud/sharing settings. Same flow as the PWA.
+- **Reader progress meter (Library + Viewer)** — Added a thin top reading-progress bar in both the Library reader pane and standalone Viewer page. Progress tracks scroll position inside sandboxed `srcdoc` iframes with `html`/`body` scroll-root fallback and resets cleanly when leaving article-reading state.
 
 ### Fixed
 - **Recirculation content leaking into extraction** — Added recirculation/related-article class patterns (`related`, `recommended`, `more-stories`, `recirc`, `recirculation`, `trending`, `popular`, `most-read`, `also-like`, `you-might-like`, `c-recirculation`, `c-related`) to the browser-side content extractor's skip list. Previously only `sidebar`, `advertisement`, `popup`, `modal`, `cookie`, `gdpr`, and `overlay` were filtered, allowing "Related Articles" thumbnails from Vox Media, Verge, etc. to leak through to the AI.

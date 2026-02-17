@@ -3,6 +3,7 @@
  */
 
 import type { AIResponse } from '@kypflug/transmogrifier-core';
+import { getDefaultRecipeId } from './recipe-capabilities';
 
 /** Available remix modes - now recipe-based */
 export type RemixMode = 'off' | 'ai';
@@ -149,7 +150,7 @@ export interface RemixProgressState {
 /** Default preferences */
 export const DEFAULT_PREFERENCES: UserPreferences = {
   mode: 'off',
-  selectedRecipe: 'reader',
+  selectedRecipe: getDefaultRecipeId(),
   customPrompt: '',
   readerSettings: {
     fontFamily: 'Georgia, serif',

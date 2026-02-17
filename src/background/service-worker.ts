@@ -36,6 +36,8 @@ import {
 import { uploadSettings, downloadSettings } from '../shared/onedrive-service';
 import { getEncryptedEnvelopeForSync, importEncryptedEnvelope, invalidateCache as invalidateSettingsCache, tryAutoImportSettingsFromCloud } from '../shared/settings-service';
 import { shareArticle, unshareArticle } from '../shared/blob-storage-service';
+import { getDefaultRecipeId, isDeterministicRecipe } from '../shared/recipe-capabilities';
+import { renderDeterministicHtml } from '../shared/deterministic-renderer';
 
 // In-memory storage for AbortControllers (per request)
 const abortControllers = new Map<string, AbortController>();
@@ -735,7 +737,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
   console.log('[Transmogrifier] AI_ANALYZE started, request:', requestId);
   
   // Get the recipe
-  const recipeId = message.payload?.recipeId || 'reader';
+  const recipeId = message.payload?.recipeId || getDefaultRecipeId();
   const recipe = getRecipe(recipeId);
   const generateImagesFlag = message.payload?.generateImages ?? false;
   
@@ -810,51 +812,68 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
   const controller = new AbortController();
   abortControllers.set(requestId, controller);
 
-  // Call AI service to generate HTML with elapsed time updates
-  const aiStartTime = Date.now();
-  await updateRemixProgress(requestId, { status: 'analyzing', step: 'AI is generating HTML... (0s)' });
-  
-  // Update elapsed time every 5 seconds during AI call, add warnings for long runs
-  const elapsedInterval = setInterval(async () => {
-    const elapsed = Date.now() - aiStartTime;
-    const elapsedSec = Math.round(elapsed / 1000);
-    const updates: Partial<RemixRequest> = { step: `AI is generating HTML... (${elapsedSec}s)` };
-    
-    if (elapsed > LONG_WARNING_THRESHOLD_MS) {
-      updates.warning = `Running for ${elapsedSec}s \u2014 this is unusually long but may still complete`;
-    } else if (elapsed > WARNING_THRESHOLD_MS) {
-      updates.warning = `Taking longer than usual (${elapsedSec}s)`;
-    }
-    
-    await updateRemixProgress(requestId, updates);
-  }, 5000);
-  elapsedIntervals.set(requestId, elapsedInterval);
-  const isImageHeavyRecipe = generateImagesFlag || recipeId === 'illustrated';
-  const maxTokens = isImageHeavyRecipe ? 48000 : 32768;
-  
-  console.log('[Transmogrifier] Calling Azure OpenAI (max tokens:', maxTokens, ')...');
-  const aiResult = await analyzeWithAI({
-    recipe,
-    domContent: content,
-    customPrompt: message.payload?.customPrompt,
-    includeImages: generateImagesFlag,
-    maxTokens,
-    abortSignal: controller.signal,
-  });
-  
-  clearInterval(elapsedInterval);
-  elapsedIntervals.delete(requestId);
-  
-  const aiDuration = Math.round((Date.now() - aiStartTime) / 1000);
-  console.log('[Transmogrifier] AI response received in', aiDuration, 'seconds:', aiResult.success ? 'success' : 'failed', aiResult.error || '');
+  const deterministic = isDeterministicRecipe(recipeId);
+  let finalHtml = '';
+  let aiExplanation: string | undefined;
+  let aiImages: ImagePlaceholder[] = [];
 
-  if (!aiResult.success || !aiResult.data) {
-    const error = aiResult.error || 'AI analysis failed';
-    await updateRemixProgress(requestId, { status: 'error', error: `${error} (after ${aiDuration}s)` });
-    return { success: false, error, requestId };
+  if (deterministic) {
+    await updateRemixProgress(requestId, { status: 'analyzing', step: 'Applying deterministic template...' });
+    finalHtml = renderDeterministicHtml({
+      title: pageTitle,
+      sourceUrl: tab.url || '',
+      content,
+    });
+  } else {
+    // Call AI service to generate HTML with elapsed time updates
+    const aiStartTime = Date.now();
+    await updateRemixProgress(requestId, { status: 'analyzing', step: 'AI is generating HTML... (0s)' });
+
+    const elapsedInterval = setInterval(async () => {
+      const elapsed = Date.now() - aiStartTime;
+      const elapsedSec = Math.round(elapsed / 1000);
+      const updates: Partial<RemixRequest> = { step: `AI is generating HTML... (${elapsedSec}s)` };
+
+      if (elapsed > LONG_WARNING_THRESHOLD_MS) {
+        updates.warning = `Running for ${elapsedSec}s \u2014 this is unusually long but may still complete`;
+      } else if (elapsed > WARNING_THRESHOLD_MS) {
+        updates.warning = `Taking longer than usual (${elapsedSec}s)`;
+      }
+
+      await updateRemixProgress(requestId, updates);
+    }, 5000);
+    elapsedIntervals.set(requestId, elapsedInterval);
+    const isImageHeavyRecipe = generateImagesFlag || recipeId === 'illustrated';
+    const maxTokens = isImageHeavyRecipe ? 48000 : 32768;
+
+    console.log('[Transmogrifier] Calling Azure OpenAI (max tokens:', maxTokens, ')...');
+    const aiResult = await analyzeWithAI({
+      recipe,
+      domContent: content,
+      customPrompt: message.payload?.customPrompt,
+      includeImages: generateImagesFlag,
+      maxTokens,
+      abortSignal: controller.signal,
+    });
+
+    clearInterval(elapsedInterval);
+    elapsedIntervals.delete(requestId);
+
+    const aiDuration = Math.round((Date.now() - aiStartTime) / 1000);
+    console.log('[Transmogrifier] AI response received in', aiDuration, 'seconds:', aiResult.success ? 'success' : 'failed', aiResult.error || '');
+
+    if (!aiResult.success || !aiResult.data) {
+      const error = aiResult.error || 'AI analysis failed';
+      await updateRemixProgress(requestId, { status: 'error', error: `${error} (after ${aiDuration}s)` });
+      return { success: false, error, requestId };
+    }
+
+    aiExplanation = aiResult.data.explanation;
+    aiImages = aiResult.data.images || [];
+    finalHtml = aiResult.data.html;
   }
 
-  let finalHtml = sanitizeOutputHtml(aiResult.data.html);
+  finalHtml = sanitizeOutputHtml(finalHtml);
 
   // Strip empty blockquotes the AI sometimes generates
   finalHtml = stripEmptyBlockquotes(finalHtml);
@@ -865,18 +884,18 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
   // Generate images if requested and AI returned image placeholders
   // NOTE: Must happen BEFORE resolveRelativeUrls, which would URL-encode
   // {{placeholder}} patterns and prevent them from being matched.
-  if (generateImagesFlag && aiResult.data.images && aiResult.data.images.length > 0) {
+  if (!deterministic && generateImagesFlag && aiImages.length > 0) {
     if (!await isImageConfiguredAsync()) {
       console.warn('[Transmogrifier] Image generation requested but not configured');
     } else {
       await updateRemixProgress(requestId, { 
         status: 'generating-images', 
-        step: `Generating ${aiResult.data.images.length} images...` 
+        step: `Generating ${aiImages.length} images...` 
       });
       
-      console.log('[Transmogrifier] Generating', aiResult.data.images.length, 'images...');
+      console.log('[Transmogrifier] Generating', aiImages.length, 'images...');
       try {
-        const generatedImages = await generateImagesFromPlaceholders(aiResult.data.images);
+        const generatedImages = await generateImagesFromPlaceholders(aiImages);
         console.log('[Transmogrifier] Images generated:', generatedImages.length);
         
         // Replace image placeholders in HTML with actual data URLs
@@ -930,7 +949,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
     
     return { 
       success: true, 
-      aiExplanation: aiResult.data.explanation,
+      aiExplanation,
       articleId: savedArticle.id,
       requestId,
     };
@@ -954,7 +973,7 @@ function scheduleCleanup(requestId: string, delayMs = 10000) {
 async function performRespin(message: RemixMessage): Promise<RemixResponse> {
   const requestId = generateRequestId();
   const articleId = message.payload?.articleId;
-  const recipeId = message.payload?.recipeId || 'reader';
+  const recipeId = message.payload?.recipeId || getDefaultRecipeId();
   const generateImagesFlag = message.payload?.generateImages ?? false;
   
   if (!articleId) {
@@ -983,60 +1002,83 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
   const controller = new AbortController();
   abortControllers.set(requestId, controller);
   
-  // Update progress with elapsed time
-  const aiStartTime = Date.now();
-  await updateRemixProgress(requestId, { 
-    requestId,
-    tabId: 0, // No source tab for respin
-    status: 'analyzing', 
-    step: 'AI is generating new design... (0s)',
-    startTime: aiStartTime,
-    pageTitle: originalArticle.title,
-    recipeId,
-  });
-  
-  // Update elapsed time every 5 seconds, add warnings for long runs
-  const elapsedInterval = setInterval(async () => {
-    const elapsed = Date.now() - aiStartTime;
-    const elapsedSec = Math.round(elapsed / 1000);
-    const updates: Partial<RemixRequest> = { step: `AI is generating new design... (${elapsedSec}s)` };
-    
-    if (elapsed > LONG_WARNING_THRESHOLD_MS) {
-      updates.warning = `Running for ${elapsedSec}s \u2014 this is unusually long but may still complete`;
-    } else if (elapsed > WARNING_THRESHOLD_MS) {
-      updates.warning = `Taking longer than usual (${elapsedSec}s)`;
+  const deterministic = isDeterministicRecipe(recipeId);
+  let finalHtml = '';
+  let aiExplanation: string | undefined;
+  let aiImages: ImagePlaceholder[] = [];
+
+  if (deterministic) {
+    await updateRemixProgress(requestId, {
+      requestId,
+      tabId: 0,
+      status: 'analyzing',
+      step: 'Applying deterministic template...',
+      startTime: Date.now(),
+      pageTitle: originalArticle.title,
+      recipeId,
+    });
+
+    finalHtml = renderDeterministicHtml({
+      title: originalArticle.title,
+      sourceUrl: originalArticle.originalUrl,
+      content: originalArticle.originalContent,
+    });
+  } else {
+    const aiStartTime = Date.now();
+    await updateRemixProgress(requestId, {
+      requestId,
+      tabId: 0,
+      status: 'analyzing',
+      step: 'AI is generating new design... (0s)',
+      startTime: aiStartTime,
+      pageTitle: originalArticle.title,
+      recipeId,
+    });
+
+    const elapsedInterval = setInterval(async () => {
+      const elapsed = Date.now() - aiStartTime;
+      const elapsedSec = Math.round(elapsed / 1000);
+      const updates: Partial<RemixRequest> = { step: `AI is generating new design... (${elapsedSec}s)` };
+
+      if (elapsed > LONG_WARNING_THRESHOLD_MS) {
+        updates.warning = `Running for ${elapsedSec}s \u2014 this is unusually long but may still complete`;
+      } else if (elapsed > WARNING_THRESHOLD_MS) {
+        updates.warning = `Taking longer than usual (${elapsedSec}s)`;
+      }
+
+      await updateRemixProgress(requestId, updates);
+    }, 5000);
+    elapsedIntervals.set(requestId, elapsedInterval);
+
+    const isImageHeavyRecipe = generateImagesFlag || recipeId === 'illustrated';
+    const maxTokens = isImageHeavyRecipe ? 48000 : 32768;
+
+    const aiResult = await analyzeWithAI({
+      recipe,
+      domContent: originalArticle.originalContent,
+      customPrompt: message.payload?.customPrompt,
+      includeImages: generateImagesFlag,
+      maxTokens,
+      abortSignal: controller.signal,
+    });
+
+    clearInterval(elapsedInterval);
+    elapsedIntervals.delete(requestId);
+
+    const aiDuration = Math.round((Date.now() - aiStartTime) / 1000);
+
+    if (!aiResult.success || !aiResult.data) {
+      const error = aiResult.error || 'AI analysis failed';
+      await updateRemixProgress(requestId, { status: 'error', error: `${error} (after ${aiDuration}s)` });
+      return { success: false, error, requestId };
     }
-    
-    await updateRemixProgress(requestId, updates);
-  }, 5000);
-  elapsedIntervals.set(requestId, elapsedInterval);
-  
-  // Determine token limits based on recipe complexity
-  const isImageHeavyRecipe = generateImagesFlag || recipeId === 'illustrated';
-  const maxTokens = isImageHeavyRecipe ? 48000 : 32768;
-  
-  // Call AI service
-  const aiResult = await analyzeWithAI({
-    recipe,
-    domContent: originalArticle.originalContent,
-    customPrompt: message.payload?.customPrompt,
-    includeImages: generateImagesFlag,
-    maxTokens,
-    abortSignal: controller.signal,
-  });
-  
-  clearInterval(elapsedInterval);
-  elapsedIntervals.delete(requestId);
-  
-  const aiDuration = Math.round((Date.now() - aiStartTime) / 1000);
-  
-  if (!aiResult.success || !aiResult.data) {
-    const error = aiResult.error || 'AI analysis failed';
-    await updateRemixProgress(requestId, { status: 'error', error: `${error} (after ${aiDuration}s)` });
-    return { success: false, error, requestId };
+
+    aiExplanation = aiResult.data.explanation;
+    aiImages = aiResult.data.images || [];
+    finalHtml = aiResult.data.html;
   }
-  
-  let finalHtml = sanitizeOutputHtml(aiResult.data.html);
+
+  finalHtml = sanitizeOutputHtml(finalHtml);
 
   // Strip empty blockquotes the AI sometimes generates
   finalHtml = stripEmptyBlockquotes(finalHtml);
@@ -1047,14 +1089,14 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
   // Generate images if requested
   // NOTE: Must happen BEFORE resolveRelativeUrls, which would URL-encode
   // {{placeholder}} patterns and prevent them from being matched.
-  if (generateImagesFlag && aiResult.data.images && aiResult.data.images.length > 0 && await isImageConfiguredAsync()) {
+  if (!deterministic && generateImagesFlag && aiImages.length > 0 && await isImageConfiguredAsync()) {
     await updateRemixProgress(requestId, { 
       status: 'generating-images', 
-      step: `Generating ${aiResult.data.images.length} images...` 
+      step: `Generating ${aiImages.length} images...` 
     });
     
     try {
-      const generatedImages = await generateImagesFromPlaceholders(aiResult.data.images);
+      const generatedImages = await generateImagesFromPlaceholders(aiImages);
       finalHtml = replaceImagePlaceholders(finalHtml, generatedImages);
     } catch (imgError) {
       console.error('[Transmogrifier] Image generation failed:', imgError);
@@ -1095,7 +1137,7 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
   
   return { 
     success: true, 
-    aiExplanation: aiResult.data.explanation,
+    aiExplanation,
     articleId: newArticle.id,
     requestId,
   };

@@ -7,11 +7,13 @@
 import { RemixMessage, RemixRequest } from '../shared/types';
 import { BUILT_IN_RECIPES } from '@kypflug/transmogrifier-core';
 import { isAIConfiguredAsync, isImageConfiguredAsync } from '../shared/config';
+import { getDefaultRecipeId, recipeCapabilityLabel, recipeRequiresAI } from '../shared/recipe-capabilities';
 
 // State
-let selectedRecipeId = 'reader';
+let selectedRecipeId = getDefaultRecipeId();
 let pinnedRecipeIds: string[] = [];
 let pollingIntervalId: ReturnType<typeof setInterval> | null = null;
+let aiConfigured = false;
 
 // DOM Elements
 const openLibraryBtn = document.getElementById('openLibraryBtn')!;
@@ -56,11 +58,7 @@ const elements = {
  */
 async function init() {
   // Check if AI is configured (async: from user settings)
-  const aiReady = await isAIConfiguredAsync();
-  if (!aiReady) {
-    elements.statusIndicator.textContent = 'API Key Missing — Open Settings ⚙️';
-    elements.statusIndicator.classList.add('error');
-  }
+  aiConfigured = await isAIConfiguredAsync();
 
   // Check if image generation is available (async)
   const imgReady = await isImageConfiguredAsync();
@@ -82,6 +80,27 @@ async function init() {
   
   // Start polling for updates
   startPolling();
+
+  // Apply initial capability-driven status
+  updateAiStatus();
+}
+
+function updateAiStatus() {
+  const requiresAi = recipeRequiresAI(selectedRecipeId);
+  if (requiresAi && !aiConfigured) {
+    elements.statusIndicator.textContent = 'API Key Missing for selected recipe — Open Settings ⚙️';
+    elements.statusIndicator.classList.add('error');
+    return;
+  }
+
+  if (!requiresAi) {
+    elements.statusIndicator.textContent = 'Ready (No AI key required for this recipe)';
+    elements.statusIndicator.classList.remove('error');
+    return;
+  }
+
+  elements.statusIndicator.textContent = 'Ready';
+  elements.statusIndicator.classList.remove('error');
 }
 
 /**
@@ -290,6 +309,7 @@ function renderRecipeTile(recipe: typeof BUILT_IN_RECIPES[0], isPinned: boolean)
   const isActive = recipe.id === selectedRecipeId;
   const pinIcon = isPinned ? '📌' : '📍';
   const pinTitle = isPinned ? 'Unpin recipe' : 'Pin to top';
+  const capability = recipeCapabilityLabel(recipe.id);
   
   return `
     <div class="recipe-tile ${isActive ? 'active' : ''}" data-recipe="${recipe.id}">
@@ -297,6 +317,7 @@ function renderRecipeTile(recipe: typeof BUILT_IN_RECIPES[0], isPinned: boolean)
       <div class="recipe-tile-body">
         <div class="recipe-tile-header">
           <span class="recipe-tile-name">${recipe.name}</span>
+          <span class="recipe-tile-capability" title="${capability}">${capability}</span>
         </div>
         <div class="recipe-tile-summary">${recipe.summary}</div>
       </div>
@@ -378,6 +399,7 @@ function selectRecipe(recipeId: string) {
   
   // Show/hide custom prompt
   elements.customPromptSection.style.display = recipeId === 'custom' ? 'block' : 'none';
+  updateAiStatus();
 }
 /**
  * Apply AI remix to the page

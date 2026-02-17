@@ -116,16 +116,33 @@
       background: rgba(255,255,255,0.4);
     }
 
+    .viewer-scroll-progress {
+      position: fixed;
+      top: 48px;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.35);
+      z-index: 10000;
+    }
+
+    .viewer-scroll-progress-fill {
+      width: 0;
+      height: 100%;
+      background: #ffffff;
+      transition: width 0.08s linear;
+    }
+
     /* Content iframe */
     .content-frame {
       position: fixed;
-      top: 48px;
+      top: 51px;
       left: 0;
       right: 0;
       bottom: 0;
       border: none;
       width: 100%;
-      height: calc(100vh - 48px);
+      height: calc(100vh - 51px);
     }
     
     /* Hidden state */
@@ -317,6 +334,9 @@
       <button class="toolbar-btn danger" id="deleteBtn" title="Delete this article">
         🗑️
       </button>
+    </div>
+    <div class="viewer-scroll-progress" id="viewerScrollProgress" aria-hidden="true">
+      <div class="viewer-scroll-progress-fill" id="viewerScrollProgressFill"></div>
     </div>
     <iframe id="contentFrame" class="content-frame" sandbox="allow-same-origin allow-scripts"></iframe>
   </div>

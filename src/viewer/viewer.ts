@@ -6,6 +6,7 @@
 import { getArticle, toggleFavorite, deleteArticle, exportArticleToFile, updateArticleShareStatus, SavedArticle } from '../shared/storage-service';
 import { resolveArticleImages } from '../shared/image-assets';
 import { BUILT_IN_RECIPES } from '@kypflug/transmogrifier-core';
+import { getDefaultRecipeId } from '../shared/recipe-capabilities';
 
 // Get article ID from URL
 const params = new URLSearchParams(window.location.search);
@@ -16,6 +17,8 @@ const loadingState = document.getElementById('loadingState')!;
 const errorState = document.getElementById('errorState')!;
 const viewerState = document.getElementById('viewerState')!;
 const articleTitle = document.getElementById('articleTitle')!;
+const viewerScrollProgress = document.getElementById('viewerScrollProgress')!;
+const viewerScrollProgressFill = document.getElementById('viewerScrollProgressFill') as HTMLElement;
 const contentFrame = document.getElementById('contentFrame') as HTMLIFrameElement;
 const favoriteBtn = document.getElementById('favoriteBtn')!;
 const favoriteIcon = document.getElementById('favoriteIcon')!;
@@ -35,8 +38,92 @@ const cancelRespinBtn = document.getElementById('cancelRespinBtn')!;
 const confirmRespinBtn = document.getElementById('confirmRespinBtn')!;
 
 let currentArticle: SavedArticle | null = null;
-let selectedRecipeId = 'reader';
+let selectedRecipeId = getDefaultRecipeId();
 let activeBlobUrls: string[] = [];
+let viewerProgressCleanup: (() => void) | null = null;
+let viewerProgressRafPending = false;
+
+function setViewerProgress(percent: number): void {
+  const clamped = Math.max(0, Math.min(100, percent));
+  viewerScrollProgressFill.style.width = `${clamped}%`;
+}
+
+function resetViewerProgress(): void {
+  setViewerProgress(0);
+}
+
+function getViewerScrollPercent(): number {
+  const doc = contentFrame.contentDocument;
+  if (!doc) return 0;
+
+  const html = doc.documentElement;
+  const body = doc.body;
+  if (!html) return 0;
+
+  let scrollTop = 0;
+  let scrollHeight = 0;
+  let clientHeight = 0;
+
+  if (html.scrollHeight > html.clientHeight + 1) {
+    scrollTop = html.scrollTop;
+    scrollHeight = html.scrollHeight;
+    clientHeight = html.clientHeight;
+  } else if (body && body.scrollHeight > body.clientHeight + 1) {
+    scrollTop = body.scrollTop;
+    scrollHeight = body.scrollHeight;
+    clientHeight = body.clientHeight;
+  } else {
+    return 100;
+  }
+
+  const maxScroll = Math.max(1, scrollHeight - clientHeight);
+  return (scrollTop / maxScroll) * 100;
+}
+
+function detachViewerProgressTracking(): void {
+  if (viewerProgressCleanup) {
+    viewerProgressCleanup();
+    viewerProgressCleanup = null;
+  }
+  viewerProgressRafPending = false;
+}
+
+function attachViewerProgressTracking(): void {
+  detachViewerProgressTracking();
+
+  const doc = contentFrame.contentDocument;
+  if (!doc) {
+    resetViewerProgress();
+    return;
+  }
+
+  const html = doc.documentElement;
+  const body = doc.body;
+
+  const scheduleUpdate = () => {
+    if (viewerProgressRafPending) return;
+    viewerProgressRafPending = true;
+    requestAnimationFrame(() => {
+      viewerProgressRafPending = false;
+      setViewerProgress(getViewerScrollPercent());
+    });
+  };
+
+  const options = { passive: true } as const;
+  doc.addEventListener('scroll', scheduleUpdate, options);
+  html?.addEventListener('scroll', scheduleUpdate, options);
+  body?.addEventListener('scroll', scheduleUpdate, options);
+  window.addEventListener('resize', scheduleUpdate, options);
+
+  viewerProgressCleanup = () => {
+    doc.removeEventListener('scroll', scheduleUpdate);
+    html?.removeEventListener('scroll', scheduleUpdate);
+    body?.removeEventListener('scroll', scheduleUpdate);
+    window.removeEventListener('resize', scheduleUpdate);
+  };
+
+  scheduleUpdate();
+}
 
 function releaseActiveBlobUrls(): void {
   for (const url of activeBlobUrls) {
@@ -84,11 +171,14 @@ async function init() {
     // Force JS-animated elements visible (sandbox blocks the IntersectionObserver
     // that would add .in to trigger the CSS transition)
     const animOverride = '<style>.io,.reveal,.cap{opacity:1!important;transform:none!important}</style>';
+    detachViewerProgressTracking();
+    resetViewerProgress();
     contentFrame.srcdoc = renderHtml.replace('</head>', animOverride + '</head>');
     
     // Fix anchor links after iframe loads
     contentFrame.addEventListener('load', () => {
       fixAnchorLinks();
+      attachViewerProgressTracking();
     });
 
     // Show viewer
@@ -108,12 +198,14 @@ async function init() {
 }
 
 window.addEventListener('beforeunload', () => {
+  detachViewerProgressTracking();
   releaseActiveBlobUrls();
 });
 
 function showError() {
   loadingState.classList.add('hidden');
   errorState.classList.remove('hidden');
+  viewerScrollProgress.classList.add('hidden');
 }
 
 /**

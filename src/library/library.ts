@@ -16,6 +16,7 @@ import { getMergedArticleList } from '../shared/sync-service';
 import { resolveArticleImages } from '../shared/image-assets';
 import { BUILT_IN_RECIPES } from '@kypflug/transmogrifier-core';
 import type { RemixRequest } from '../shared/types';
+import { getDefaultRecipeId } from '../shared/recipe-capabilities';
 
 // ─── State ───────────────────────────────────────────
 let articles: (ArticleSummary & { cloudOnly?: boolean })[] = [];
@@ -23,11 +24,13 @@ let filteredArticles: (ArticleSummary & { cloudOnly?: boolean })[] = [];
 let selectedArticleId: string | null = null;
 let currentArticle: SavedArticle | null = null;
 let focusedIndex = -1;
-let selectedRecipeId = 'reader';
+let selectedRecipeId = getDefaultRecipeId();
 let activeRemixes: RemixRequest[] = [];
 let selectedPendingId: string | null = null;
 let activeBlobUrls: string[] = [];
 let isSelectingArticle = false;
+let readingScrollProgressCleanup: (() => void) | null = null;
+let readingScrollProgressRafPending = false;
 
 function releaseActiveBlobUrls(): void {
   for (const url of activeBlobUrls) {
@@ -37,6 +40,7 @@ function releaseActiveBlobUrls(): void {
 }
 
 window.addEventListener('beforeunload', () => {
+  detachReadingScrollProgressTracking();
   releaseActiveBlobUrls();
 });
 
@@ -109,6 +113,90 @@ const progressRecipe = document.getElementById('progressRecipe') as HTMLElement;
 const progressStep = document.getElementById('progressStep') as HTMLElement;
 const progressElapsed = document.getElementById('progressElapsed') as HTMLElement;
 const progressCancel = document.getElementById('progressCancel') as HTMLButtonElement;
+const readingScrollProgress = document.getElementById('readingScrollProgress') as HTMLElement;
+const readingScrollProgressFill = document.getElementById('readingScrollProgressFill') as HTMLElement;
+
+function setReadingScrollProgress(percent: number): void {
+  const clamped = Math.max(0, Math.min(100, percent));
+  readingScrollProgressFill.style.width = `${clamped}%`;
+}
+
+function resetReadingScrollProgress(): void {
+  setReadingScrollProgress(0);
+}
+
+function getFrameScrollPercent(): number {
+  const doc = contentFrame.contentDocument;
+  if (!doc) return 0;
+
+  const html = doc.documentElement;
+  const body = doc.body;
+  if (!html) return 0;
+
+  let scrollTop = 0;
+  let scrollHeight = 0;
+  let clientHeight = 0;
+
+  if (html.scrollHeight > html.clientHeight + 1) {
+    scrollTop = html.scrollTop;
+    scrollHeight = html.scrollHeight;
+    clientHeight = html.clientHeight;
+  } else if (body && body.scrollHeight > body.clientHeight + 1) {
+    scrollTop = body.scrollTop;
+    scrollHeight = body.scrollHeight;
+    clientHeight = body.clientHeight;
+  } else {
+    return 100;
+  }
+
+  const maxScroll = Math.max(1, scrollHeight - clientHeight);
+  return (scrollTop / maxScroll) * 100;
+}
+
+function detachReadingScrollProgressTracking(): void {
+  if (readingScrollProgressCleanup) {
+    readingScrollProgressCleanup();
+    readingScrollProgressCleanup = null;
+  }
+  readingScrollProgressRafPending = false;
+}
+
+function attachReadingScrollProgressTracking(): void {
+  detachReadingScrollProgressTracking();
+
+  const doc = contentFrame.contentDocument;
+  if (!doc) {
+    resetReadingScrollProgress();
+    return;
+  }
+
+  const html = doc.documentElement;
+  const body = doc.body;
+
+  const scheduleUpdate = () => {
+    if (readingScrollProgressRafPending) return;
+    readingScrollProgressRafPending = true;
+    requestAnimationFrame(() => {
+      readingScrollProgressRafPending = false;
+      setReadingScrollProgress(getFrameScrollPercent());
+    });
+  };
+
+  const options = { passive: true } as const;
+  doc.addEventListener('scroll', scheduleUpdate, options);
+  html?.addEventListener('scroll', scheduleUpdate, options);
+  body?.addEventListener('scroll', scheduleUpdate, options);
+  window.addEventListener('resize', scheduleUpdate, options);
+
+  readingScrollProgressCleanup = () => {
+    doc.removeEventListener('scroll', scheduleUpdate);
+    html?.removeEventListener('scroll', scheduleUpdate);
+    body?.removeEventListener('scroll', scheduleUpdate);
+    window.removeEventListener('resize', scheduleUpdate);
+  };
+
+  scheduleUpdate();
+}
 
 // ─── Init ────────────────────────────────────────────
 async function init() {
@@ -245,6 +333,9 @@ function selectPendingRemix(requestId: string) {
   selectedArticleId = null;
   currentArticle = null;
   selectedPendingId = requestId;
+  detachReadingScrollProgressTracking();
+  resetReadingScrollProgress();
+  readingScrollProgress.classList.add('hidden');
 
   // Update list highlight
   articleList.querySelectorAll('.article-item').forEach(el => el.classList.remove('active'));
@@ -264,6 +355,7 @@ function showPendingProgress(remix: RemixRequest) {
   readingEmpty.classList.add('hidden');
   readingArticle.classList.add('hidden');
   readingProgress.classList.remove('hidden');
+  readingScrollProgress.classList.add('hidden');
 
   progressTitle.textContent = remix.pageTitle || 'Transmogrifying…';
 
@@ -426,6 +518,10 @@ async function selectArticle(id: string) {
   isSelectingArticle = true;
 
   try {
+  detachReadingScrollProgressTracking();
+  resetReadingScrollProgress();
+  readingScrollProgress.classList.add('hidden');
+
   selectedArticleId = id;
   selectedPendingId = null;
   focusedIndex = filteredArticles.findIndex(a => a.id === id);
@@ -476,6 +572,7 @@ async function selectArticle(id: string) {
     // Update reading pane
     readingEmpty.classList.add('hidden');
     readingArticle.classList.remove('hidden');
+    readingScrollProgress.classList.remove('hidden');
 
     readingTitle.textContent = article.title;
 
@@ -519,6 +616,7 @@ async function selectArticle(id: string) {
     contentFrame.addEventListener('load', () => {
       fixAnchorLinks();
       forwardIframeKeyboard();
+      attachReadingScrollProgressTracking();
     }, { once: true });
 
     // Mobile: switch to reading view
@@ -544,10 +642,13 @@ function clearSelection() {
   selectedPendingId = null;
   currentArticle = null;
   focusedIndex = -1;
+  detachReadingScrollProgressTracking();
+  resetReadingScrollProgress();
   releaseActiveBlobUrls();
   readingEmpty.classList.remove('hidden');
   readingArticle.classList.add('hidden');
   readingProgress.classList.add('hidden');
+  readingScrollProgress.classList.add('hidden');
   document.title = 'Transmogrifications';
 
   articleList.querySelectorAll('.article-item').forEach(el => {
