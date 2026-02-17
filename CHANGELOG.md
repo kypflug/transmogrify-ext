@@ -2,7 +2,7 @@
 
 All notable changes to Transmogrifier will be documented in this file.
 
-## [Unreleased]
+## [0.5.5] - 2026-02-17
 
 ### Added
 - **Gift token redemption** — Settings screen has a "Gift Token" section where users can enter a passphrase from a friend to import preconfigured AI/cloud/sharing settings. Same flow as the PWA.
