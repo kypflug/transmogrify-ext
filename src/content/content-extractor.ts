@@ -300,7 +300,12 @@ function isHiddenOrSkipped(el: HTMLElement): boolean {
   // recipes already tell the LLM to discard site debris)
   const className = (typeof el.className === 'string' ? el.className : '').toLowerCase();
   const id = el.id?.toLowerCase() || '';
-  const skipPatterns = ['sidebar', 'advertisement', 'popup', 'modal', 'cookie', 'gdpr', 'overlay'];
+  const skipPatterns = [
+    'sidebar', 'advertisement', 'popup', 'modal', 'cookie', 'gdpr', 'overlay',
+    'related', 'recommended', 'more-stories', 'recirc', 'recirculation',
+    'trending', 'popular', 'most-read', 'also-like', 'you-might-like',
+    'c-recirculation', 'c-related',
+  ];
 
   for (const pattern of skipPatterns) {
     if (className.includes(pattern) || id.includes(pattern)) return true;
