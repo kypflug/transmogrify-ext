@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1veNhJRwBVaO4EY2nc434oYK3amU4/3rpkWgGa29UA4RMHxUd3HRvVFF/KE2r3FwCIT5z4BJUEV88FZ1MPiX2w5m6rUkRsVjUgDhQoVgqianYxS/YLzdECHL+veBwMkZG2fbfCKhrf9Lx3OTwnzPLs2BeJXfjVAdxRvYiIvKsNJulN5Mqm/PGEFzNQes4PRb/aGbQwBmuaBofFeje7eImEOtWKmmYqMtI1D7gjW7O3x9Nw5vFi7enMoeGk8AI1ugzruoAP7CaYFDiDLNiT3cbjlC8HoSXBCHqPSJHtfZSlvcPJ4Csj905OxF3D4URIrJKdtYGOH7LLuBgm9HUXyFwQIDAQAB",
   "name": "Transmogrifier",
-  "version": "0.1.0",
+  "version": "0.5.6",
   "description": "Transmogrify web pages for better focus and readability - your super duper reading mode",
   "icons": {
     "16": "icons/transmogrify16.png",
