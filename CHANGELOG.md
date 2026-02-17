@@ -2,6 +2,18 @@
 
 All notable changes to Transmogrifier will be documented in this file.
 
+## [0.5.7] - 2026-02-17
+
+### Added
+- **Blocked-source status hint in Library list** — Articles saved as fallback notes for server-blocked fetches (`source-fetch-blocked-401-403`) now show a warning badge in list metadata.
+- **Blocked-source banner in Viewer** — Standalone viewer now shows a clear warning with a direct link to the original URL when the article is a blocked-source fallback.
+
+### Changed
+- **Cloud metadata mapping updated** — Extension local/cloud article models now preserve `rssFallbackReason` through sync/download so blocked-source status can be surfaced consistently.
+
+### Fixed
+- **Fast deterministic cleanup and image parsing** — Deterministic renderer now removes more site-chrome detritus and correctly parses markdown image lines with trailing captions.
+
 ## [0.5.6] - 2026-02-17
 
 ### Added
