@@ -103,15 +103,12 @@ function structuredTextToHtml(content: string, title: string, sourceUrl: string)
       continue;
     }
 
-    const imageMatch = /^\[Image:\s*(.*?)\]\(([^)]+)\)$/i.exec(line) || /^!\[(.*?)\]\(([^)]+)\)$/.exec(line);
-    if (imageMatch) {
+    const parsedImage = parseImageLine(line, sourceUrl);
+    if (parsedImage) {
       flushParagraph();
       flushList();
-      const alt = imageMatch[1].trim() || 'Article image';
-      const src = safeUrl(imageMatch[2].trim(), sourceUrl);
-      if (src) {
-        blocks.push(`<figure><img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" loading="lazy" /><figcaption>${escapeHtml(alt)}</figcaption></figure>`);
-      }
+      const caption = parsedImage.caption || parsedImage.alt;
+      blocks.push(`<figure><img src="${escapeHtml(parsedImage.src)}" alt="${escapeHtml(parsedImage.alt)}" loading="lazy" /><figcaption>${escapeHtml(caption)}</figcaption></figure>`);
       continue;
     }
 
@@ -202,8 +199,57 @@ function safeUrl(input: string, baseUrl: string): string | null {
 function normalizeContent(content: string, title: string): string {
   let normalized = normalizeMojibake(content);
   normalized = stripLeadingMeta(normalized, title);
+  normalized = stripUiDetritusLines(normalized);
+  normalized = collapseDuplicateLines(normalized);
   normalized = stripTrailingDetritus(normalized, title);
   return normalized;
+}
+
+function parseImageLine(line: string, sourceUrl: string): { alt: string; src: string; caption?: string } | null {
+  const parsed = parseImageReference(line);
+  if (!parsed) return null;
+  const src = safeUrl(parsed.rawUrl.trim(), sourceUrl);
+  if (!src) return null;
+
+  const alt = parsed.alt.trim() || 'Article image';
+  const caption = normalizeTrailingCaption(parsed.trailing);
+  return { alt, src, caption: caption || undefined };
+}
+
+function parseImageReference(line: string): { alt: string; rawUrl: string; trailing: string } | null {
+  const imagePrefix = /^!\[([^\]]*)\]\(/.exec(line);
+  const bracketPrefix = /^\[Image:\s*([^\]]*)\]\(/i.exec(line);
+  const prefix = imagePrefix || bracketPrefix;
+  if (!prefix) return null;
+
+  const alt = prefix[1] || '';
+  const start = prefix[0].length;
+  let depth = 1;
+  let i = start;
+
+  while (i < line.length) {
+    const ch = line[i];
+    if (ch === '(') depth++;
+    if (ch === ')') {
+      depth--;
+      if (depth === 0) break;
+    }
+    i++;
+  }
+
+  if (depth !== 0) return null;
+  const rawUrl = line.slice(start, i).trim();
+  const trailing = line.slice(i + 1).trim();
+  if (!rawUrl) return null;
+  return { alt, rawUrl, trailing };
+}
+
+function normalizeTrailingCaption(input: string): string {
+  if (!input) return '';
+  let text = input.trim();
+  text = text.replace(/^[\-:–—\s]+/, '').trim();
+  text = text.replace(/^([*_])(.*)\1$/, '$2').trim();
+  return text;
 }
 
 function normalizeMojibake(input: string): string {
@@ -249,8 +295,6 @@ function stripLeadingMeta(text: string, title: string): string {
 function stripTrailingDetritus(content: string, title: string): string {
   const lines = content.split('\n');
   const titleWords = new Set(title.toLowerCase().split(/\s+/).filter(word => word.length > 3));
-
-  const imageRefPattern = /^(?:\[Image:\s*([^\]]*)\]\(.*\)|!\[([^\]]*)\]\(.*\))$/;
   let trailingStart = -1;
   let consecutiveUnrelated = 0;
 
@@ -258,15 +302,15 @@ function stripTrailingDetritus(content: string, title: string): string {
     const trimmed = lines[i].trim();
     if (!trimmed) continue;
 
-    const match = trimmed.match(imageRefPattern);
-    if (!match) {
+    const parsed = parseImageReference(trimmed);
+    if (!parsed) {
       if (trimmed === '--- Article Images ---' && consecutiveUnrelated >= 3) {
         trailingStart = i;
       }
       break;
     }
 
-    const alt = (match[1] || match[2] || '').trim().toLowerCase();
+    const alt = parsed.alt.trim().toLowerCase();
     const words = alt.split(/\s+/).filter(word => word.length > 3);
     if (words.length >= 3) {
       const overlap = words.filter(word => titleWords.has(word)).length;
@@ -313,6 +357,51 @@ function isMetaLine(line: string): boolean {
   if (t.length < 60 && /[•|—–·]/.test(t) && !/[.!?]$/.test(t)) return true;
   if (/^(?:Timestamp|Source|Published|Updated|Date|Section|Category|Type)\s*:/i.test(t)) return true;
   return false;
+}
+
+function stripUiDetritusLines(content: string): string {
+  return content
+    .split('\n')
+    .filter(line => !isUiDetritusLine(line.trim()))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
+function isUiDetritusLine(line: string): boolean {
+  if (!line) return false;
+  const t = line.trim();
+  if (t.length > 220) return false;
+
+  if (/^Follow topics and authors from this story/i.test(t)) return true;
+  if (/^Thanks for reading .*Subscribe/i.test(t)) return true;
+  if (/^By subscribing, you agree/i.test(t)) return true;
+  if (/^\s*[•\-*]\s*[^\n]*\b(?:follow|see all)\b/i.test(t) && /\bclose\b/i.test(t)) return true;
+
+  if (/posts from this (?:topic|author) will be added to your daily email digest/i.test(t)) return true;
+  if (/daily email digest and your homepage feed/i.test(t)) return true;
+  if (/\bfollowfollow\b/i.test(t)) return true;
+  if (/\bsee all\b/i.test(t) && /\bfollow\b/i.test(t)) return true;
+  if (/\blink\b\s*[•|]\s*\bshare\b\s*[•|]\s*\bgift\b/i.test(t)) return true;
+  if (/\b[a-z][a-z\s&.-]{2,30}close[a-z][a-z\s&.-]{2,40}posts from this (?:topic|author)\b/i.test(t)) return true;
+
+  return false;
+}
+
+function collapseDuplicateLines(content: string): string {
+  const lines = content.split('\n');
+  const deduped: string[] = [];
+  let prevNorm = '';
+
+  for (const line of lines) {
+    const norm = line.trim().toLowerCase().replace(/\s+/g, ' ');
+    if (norm && norm === prevNorm && (norm.length > 24 || norm.startsWith('#'))) {
+      continue;
+    }
+    deduped.push(line);
+    if (norm) prevNorm = norm;
+  }
+
+  return deduped.join('\n');
 }
 
 function escapeHtml(input: string): string {
