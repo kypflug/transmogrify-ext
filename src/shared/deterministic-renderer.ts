@@ -22,6 +22,7 @@ export function renderDeterministicHtml(input: DeterministicRenderInput): string
 function structuredTextToHtml(content: string, title: string, sourceUrl: string): string {
   const lines = content.split(/\r?\n/);
   const blocks: string[] = [];
+  const recentParagraphNorms: string[] = [];
   let paragraphBuffer: string[] = [];
   let listItems: string[] = [];
   let listType: 'ul' | 'ol' | null = null;
@@ -33,8 +34,17 @@ function structuredTextToHtml(content: string, title: string, sourceUrl: string)
 
   const flushParagraph = () => {
     if (paragraphBuffer.length === 0) return;
-    const text = paragraphBuffer.join(' ').trim();
-    if (text) blocks.push(`<p>${renderInline(text, sourceUrl)}</p>`);
+    const text = paragraphBuffer.join(' ').replace(/\s+/g, ' ').trim();
+    if (text && !isGarbledParagraph(text)) {
+      const paragraphNorm = normalizeParagraphForDedup(text);
+      if (!isNearDuplicateParagraph(paragraphNorm, recentParagraphNorms)) {
+        blocks.push(`<p>${renderInline(text, sourceUrl)}</p>`);
+        if (paragraphNorm.length >= 40) {
+          recentParagraphNorms.push(paragraphNorm);
+          if (recentParagraphNorms.length > 12) recentParagraphNorms.shift();
+        }
+      }
+    }
     paragraphBuffer = [];
   };
 
@@ -402,6 +412,60 @@ function collapseDuplicateLines(content: string): string {
   }
 
   return deduped.join('\n');
+}
+
+function normalizeParagraphForDedup(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\[[^\]]+\]\(([^)]+)\)/g, '$1')
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/&[a-z]+;/g, ' ')
+    .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isNearDuplicateParagraph(currentNorm: string, recentNorms: string[]): boolean {
+  if (currentNorm.length < 70) return false;
+
+  for (let i = recentNorms.length - 1; i >= Math.max(0, recentNorms.length - 6); i--) {
+    const prev = recentNorms[i];
+    const minLen = Math.min(currentNorm.length, prev.length);
+    const maxLen = Math.max(currentNorm.length, prev.length);
+    if (minLen < 70) continue;
+
+    const similarLength = minLen / maxLen >= 0.62;
+    if (!similarLength) continue;
+
+    if (currentNorm === prev) return true;
+    if (prev.includes(currentNorm) || currentNorm.includes(prev)) return true;
+    if (overlapRatio(currentNorm, prev) >= 0.82) return true;
+  }
+
+  return false;
+}
+
+function overlapRatio(a: string, b: string): number {
+  const aWords = a.split(' ').filter(w => w.length > 2);
+  const bSet = new Set(b.split(' ').filter(w => w.length > 2));
+  if (aWords.length === 0 || bSet.size === 0) return 0;
+  let overlap = 0;
+  for (const w of aWords) {
+    if (bSet.has(w)) overlap++;
+  }
+  return overlap / aWords.length;
+}
+
+function isGarbledParagraph(text: string): boolean {
+  const t = text.trim();
+  if (!t) return true;
+  if (/^[\W_]{1,8}$/.test(t)) return true;
+
+  const compact = t.replace(/\s+/g, ' ');
+  if (/[“"'`][\s.]{0,2}[”"'`]/.test(compact)) return true;
+  if (/[“"'`]\s*\.\s*[”"'`]/.test(compact)) return true;
+
+  return false;
 }
 
 function escapeHtml(input: string): string {
