@@ -481,6 +481,9 @@ function renderList() {
     const recipeIcon = recipe?.icon ?? '📄';
     const recipeName = article.recipeName || recipe?.name || article.recipeId;
     const dateStr = formatRelativeDate(article.createdAt);
+    const blockedBadge = article.rssFallbackReason === 'source-fetch-blocked-401-403'
+      ? '<span class="article-item-blocked" title="Source blocked server fetch; saved as failure note">⚠</span>'
+      : '';
     const cloudBadge = (article as any).cloudOnly
       ? '<span class="article-item-cloud" title="Stored in cloud">☁</span>'
       : '';
@@ -493,6 +496,7 @@ function renderList() {
           <span class="article-item-recipe">${recipeIcon} ${escapeHtml(recipeName)}</span>
           <span class="article-item-dot">·</span>
           <span>${dateStr}</span>
+          ${blockedBadge}
         </div>
       </div>
     `;
@@ -580,7 +584,10 @@ async function selectArticle(id: string) {
     const recipe = BUILT_IN_RECIPES.find(r => r.id === article.recipeId);
     const recipeLabel = recipe ? `${recipe.icon} ${recipe.name}` : article.recipeName;
     const dateStr = formatRelativeDate(article.createdAt);
-    readingInfo.textContent = `${domain}  ·  ${recipeLabel}  ·  ${dateStr}`;
+    const blockedSuffix = article.rssFallbackReason === 'source-fetch-blocked-401-403'
+      ? '  ·  ⚠ Source blocked server fetch'
+      : '';
+    readingInfo.textContent = `${domain}  ·  ${recipeLabel}  ·  ${dateStr}${blockedSuffix}`;
 
     // Update favorite button
     favoriteIcon.textContent = article.isFavorite ? '★' : '☆';

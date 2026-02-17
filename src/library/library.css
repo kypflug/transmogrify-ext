@@ -239,6 +239,12 @@ body {
   font-size: 13px;
 }
 
+.article-item-blocked {
+  color: var(--edge-red);
+  font-size: 12px;
+  margin-left: auto;
+}
+
 .article-item-meta {
   display: flex;
   align-items: center;

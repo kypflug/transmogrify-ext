@@ -30,6 +30,8 @@ export interface SavedArticle {
   shareShortCode?: string; // Short code (for unsharing via cloud API)
   sharedAt?: number;       // When the article was shared (epoch ms)
   shareExpiresAt?: number; // Optional expiration (epoch ms)
+  /** Why RSS content was not used (or blocked-source fallback marker) */
+  rssFallbackReason?: string;
 }
 
 export interface ArticleSummary {
@@ -42,6 +44,8 @@ export interface ArticleSummary {
   createdAt: number;
   isFavorite: boolean;
   size: number;
+  /** Why RSS content was not used (or blocked-source fallback marker) */
+  rssFallbackReason?: string;
 }
 
 let dbInstance: IDBDatabase | null = null;
@@ -282,6 +286,7 @@ export async function getAllArticles(): Promise<ArticleSummary[]> {
           createdAt: article.createdAt,
           isFavorite: article.isFavorite,
           size: article.size,
+          rssFallbackReason: article.rssFallbackReason,
         });
         cursor.continue();
       } else {

@@ -28,6 +28,7 @@ export interface OneDriveArticleMeta {
   isFavorite: boolean;
   size: number;
   images?: OneDriveImageAsset[];
+  rssFallbackReason?: string;
   // Sharing fields (optional)
   sharedUrl?: string;
   sharedBlobUrl?: string;

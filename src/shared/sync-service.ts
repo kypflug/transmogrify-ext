@@ -485,6 +485,7 @@ async function saveOrUpdateArticle(
     updatedAt: meta.updatedAt,
     isFavorite: meta.isFavorite,
     size: new Blob([cleanHtml]).size,
+    rssFallbackReason: meta.rssFallbackReason,
   };
 
   return upsertArticle(article);
@@ -514,6 +515,7 @@ export async function getMergedArticleList(): Promise<(ArticleSummary & { cloudO
         createdAt: cloud.createdAt,
         isFavorite: cloud.isFavorite,
         size: cloud.size,
+        rssFallbackReason: cloud.rssFallbackReason,
         cloudOnly: true,
       });
     }

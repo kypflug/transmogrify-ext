@@ -19,6 +19,7 @@ const viewerState = document.getElementById('viewerState')!;
 const articleTitle = document.getElementById('articleTitle')!;
 const viewerScrollProgress = document.getElementById('viewerScrollProgress')!;
 const viewerScrollProgressFill = document.getElementById('viewerScrollProgressFill') as HTMLElement;
+const blockedNotice = document.getElementById('blockedNotice') as HTMLElement;
 const contentFrame = document.getElementById('contentFrame') as HTMLIFrameElement;
 const favoriteBtn = document.getElementById('favoriteBtn')!;
 const favoriteIcon = document.getElementById('favoriteIcon')!;
@@ -151,6 +152,16 @@ async function init() {
     articleTitle.textContent = currentArticle.title;
     favoriteIcon.textContent = currentArticle.isFavorite ? '★' : '☆';
 
+    if (currentArticle.rssFallbackReason === 'source-fetch-blocked-401-403') {
+      blockedNotice.innerHTML = `⚠ This article could not be saved due to a server block (401/403). <a href="${escapeHtml(currentArticle.originalUrl)}" target="_blank" rel="noopener noreferrer">Open original URL</a>.`;
+      blockedNotice.classList.remove('hidden');
+      contentFrame.classList.add('with-notice');
+    } else {
+      blockedNotice.classList.add('hidden');
+      blockedNotice.innerHTML = '';
+      contentFrame.classList.remove('with-notice');
+    }
+
     // Load content into iframe using srcdoc
     // Fix any leftover double-escaped Unicode sequences from older AI generations
     const cleanHtml = currentArticle.html.replace(
@@ -206,6 +217,18 @@ function showError() {
   loadingState.classList.add('hidden');
   errorState.classList.remove('hidden');
   viewerScrollProgress.classList.add('hidden');
+  blockedNotice.classList.add('hidden');
+  blockedNotice.innerHTML = '';
+  contentFrame.classList.remove('with-notice');
+}
+
+function escapeHtml(input: string): string {
+  return input
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
 /**

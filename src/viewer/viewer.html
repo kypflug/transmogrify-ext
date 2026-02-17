@@ -126,6 +126,29 @@
       z-index: 10000;
     }
 
+    .blocked-notice {
+      position: fixed;
+      top: 51px;
+      left: 0;
+      right: 0;
+      padding: 6px 12px;
+      background: #FFF4CE;
+      border-bottom: 1px solid #F3D57A;
+      color: #6A4B00;
+      font-size: 12px;
+      z-index: 9999;
+    }
+
+    .blocked-notice a {
+      color: #005A9E;
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .blocked-notice a:hover {
+      text-decoration: underline;
+    }
+
     .viewer-scroll-progress-fill {
       width: 0;
       height: 100%;
@@ -136,13 +159,18 @@
     /* Content iframe */
     .content-frame {
       position: fixed;
-      top: 51px;
+      top: 54px;
       left: 0;
       right: 0;
       bottom: 0;
       border: none;
       width: 100%;
-      height: calc(100vh - 51px);
+      height: calc(100vh - 54px);
+    }
+
+    .content-frame.with-notice {
+      top: 84px;
+      height: calc(100vh - 84px);
     }
     
     /* Hidden state */
@@ -338,6 +366,7 @@
     <div class="viewer-scroll-progress" id="viewerScrollProgress" aria-hidden="true">
       <div class="viewer-scroll-progress-fill" id="viewerScrollProgressFill"></div>
     </div>
+    <div class="blocked-notice hidden" id="blockedNotice"></div>
     <iframe id="contentFrame" class="content-frame" sandbox="allow-same-origin allow-scripts"></iframe>
   </div>
   
