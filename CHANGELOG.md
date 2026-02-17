@@ -2,6 +2,17 @@
 
 All notable changes to Transmogrifier will be documented in this file.
 
+## [0.5.6] - 2026-02-17
+
+### Added
+- **Fast recipe as default selection** — Popup, library, and viewer recipe selection now default to `fast-no-inference` when available, with safe fallback to `reader` for compatibility.
+- **Deterministic no-AI render path** — Background remix/respin flow now supports deterministic HTML rendering for recipes that do not require AI calls.
+- **Recipe capability labeling** — Recipe pickers now show capability hints (`AI required` vs `No AI required`) for clearer user expectations.
+
+### Changed
+- **Conditional AI/image execution** — AI generation and image placeholder generation are skipped for deterministic recipes, while preserving existing AI-driven behavior for AI-required recipes.
+- **Core package alignment** — Extension updated to consume `@kypflug/transmogrifier-core` `0.1.25` for recipe capability metadata and deterministic-render support.
+
 ## [0.5.5] - 2026-02-17
 
 ### Added
