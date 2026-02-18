@@ -1,10 +1,127 @@
-import { FAST_DETERMINISTIC_TEMPLATE } from '@kypflug/transmogrifier-core';
-
 interface DeterministicRenderInput {
   title: string;
   sourceUrl: string;
   content: string;
 }
+
+const FAST_DETERMINISTIC_TEMPLATE = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{TITLE}</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: Canvas;
+      color: CanvasText;
+      font-family: "Segoe UI", "Inter", system-ui, -apple-system, sans-serif;
+      line-height: 1.7;
+      font-size: 1rem;
+    }
+
+    main {
+      max-width: 75ch;
+      margin: 0 auto;
+      padding: 2rem 1.25rem 3rem;
+    }
+
+    header {
+      margin-bottom: 2rem;
+      border-bottom: 1px solid color-mix(in srgb, CanvasText 16%, transparent);
+      padding-bottom: 1rem;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+      line-height: 1.25;
+      margin: 1.4em 0 0.55em;
+      text-wrap: balance;
+    }
+
+    h1 {
+      margin-top: 0;
+      font-size: clamp(1.7rem, 3vw, 2.35rem);
+    }
+
+    p,
+    ul,
+    ol,
+    blockquote,
+    pre,
+    figure {
+      margin: 0 0 1.05rem;
+    }
+
+    ul,
+    ol {
+      padding-left: 1.4rem;
+    }
+
+    a {
+      color: LinkText;
+    }
+
+    blockquote {
+      margin-left: 0;
+      padding-left: 1rem;
+      border-left: 3px solid color-mix(in srgb, CanvasText 20%, transparent);
+      opacity: 0.9;
+    }
+
+    pre {
+      overflow: auto;
+      padding: 0.9rem;
+      border-radius: 0.5rem;
+      background: color-mix(in srgb, CanvasText 8%, Canvas);
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.94em;
+    }
+
+    figure {
+      display: grid;
+      gap: 0.55rem;
+    }
+
+    img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 0.55rem;
+    }
+
+    figcaption,
+    .meta {
+      font-size: 0.9rem;
+      opacity: 0.75;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>{TITLE}</h1>
+      <p class="meta">{META}</p>
+      <p class="meta">{EXCERPT}</p>
+    </header>
+    <article>{CONTENT}</article>
+  </main>
+</body>
+</html>`;
 
 export function renderDeterministicHtml(input: DeterministicRenderInput): string {
   const cleanedContent = normalizeContent(input.content, input.title);
