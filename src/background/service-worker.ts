@@ -6,7 +6,7 @@
 
 import { RemixMessage, RemixResponse, GeneratedImageData, RemixRequest } from '../shared/types';
 import { loadPreferences, savePreferences } from '../shared/utils';
-import { analyzeWithAI } from '../shared/ai-service';
+import { analyzeWithAI, extractWithAI } from '../shared/ai-service';
 import { getRecipe, BUILT_IN_RECIPES, sanitizeOutputHtml, resolveRelativeUrls } from '@kypflug/transmogrifier-core';
 import type { ImagePlaceholder } from '@kypflug/transmogrifier-core';
 import { generateImages, base64ToDataUrl, ImageGenerationRequest } from '../shared/image-service';
@@ -36,7 +36,7 @@ import {
 import { uploadSettings, downloadSettings } from '../shared/onedrive-service';
 import { getEncryptedEnvelopeForSync, importEncryptedEnvelope, invalidateCache as invalidateSettingsCache, tryAutoImportSettingsFromCloud } from '../shared/settings-service';
 import { shareArticle, unshareArticle } from '../shared/blob-storage-service';
-import { getDefaultRecipeId, isDeterministicRecipe } from '../shared/recipe-capabilities';
+import { getDefaultRecipeId, isDeterministicRecipe, isAIExtractRecipe } from '../shared/recipe-capabilities';
 import { renderDeterministicHtml } from '../shared/deterministic-renderer';
 
 // In-memory storage for AbortControllers (per request)
@@ -813,6 +813,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
   abortControllers.set(requestId, controller);
 
   const deterministic = isDeterministicRecipe(recipeId);
+  const aiExtract = isAIExtractRecipe(recipeId);
   let finalHtml = '';
   let aiExplanation: string | undefined;
   let aiImages: ImagePlaceholder[] = [];
@@ -823,6 +824,39 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
       title: pageTitle,
       sourceUrl: tab.url || '',
       content,
+    });
+  } else if (aiExtract) {
+    // Hybrid path: AI cleans content, deterministic template renders it
+    const aiStartTime = Date.now();
+    await updateRemixProgress(requestId, { status: 'analyzing', step: 'AI is cleaning content... (0s)' });
+
+    const elapsedInterval = setInterval(async () => {
+      const elapsedSec = Math.round((Date.now() - aiStartTime) / 1000);
+      await updateRemixProgress(requestId, { step: `AI is cleaning content... (${elapsedSec}s)` });
+    }, 5000);
+    elapsedIntervals.set(requestId, elapsedInterval);
+
+    const extractResult = await extractWithAI({
+      recipe,
+      domContent: content,
+      abortSignal: controller.signal,
+    });
+
+    clearInterval(elapsedInterval);
+    elapsedIntervals.delete(requestId);
+
+    if (!extractResult.success) {
+      const error = extractResult.error || 'AI content extraction failed';
+      abortControllers.delete(requestId);
+      await updateRemixProgress(requestId, { status: 'error', error });
+      return { success: false, error, requestId };
+    }
+
+    const extraction = (extractResult.data as any)?.extraction;
+    finalHtml = renderDeterministicHtml({
+      title: extraction?.title || pageTitle,
+      sourceUrl: tab.url || '',
+      content: extraction?.content || content,
     });
   } else {
     // Call AI service to generate HTML with elapsed time updates
@@ -1003,6 +1037,7 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
   abortControllers.set(requestId, controller);
   
   const deterministic = isDeterministicRecipe(recipeId);
+  const aiExtract = isAIExtractRecipe(recipeId);
   let finalHtml = '';
   let aiExplanation: string | undefined;
   let aiImages: ImagePlaceholder[] = [];
@@ -1022,6 +1057,46 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
       title: originalArticle.title,
       sourceUrl: originalArticle.originalUrl,
       content: originalArticle.originalContent,
+    });
+  } else if (aiExtract) {
+    const aiStartTime = Date.now();
+    await updateRemixProgress(requestId, {
+      requestId,
+      tabId: 0,
+      status: 'analyzing',
+      step: 'AI is cleaning content... (0s)',
+      startTime: aiStartTime,
+      pageTitle: originalArticle.title,
+      recipeId,
+    });
+
+    const elapsedInterval = setInterval(async () => {
+      const elapsedSec = Math.round((Date.now() - aiStartTime) / 1000);
+      await updateRemixProgress(requestId, { step: `AI is cleaning content... (${elapsedSec}s)` });
+    }, 5000);
+    elapsedIntervals.set(requestId, elapsedInterval);
+
+    const extractResult = await extractWithAI({
+      recipe,
+      domContent: originalArticle.originalContent,
+      abortSignal: controller.signal,
+    });
+
+    clearInterval(elapsedInterval);
+    elapsedIntervals.delete(requestId);
+
+    if (!extractResult.success) {
+      const error = extractResult.error || 'AI content extraction failed';
+      abortControllers.delete(requestId);
+      await updateRemixProgress(requestId, { status: 'error', error });
+      return { success: false, error, requestId };
+    }
+
+    const extraction = (extractResult.data as any)?.extraction;
+    finalHtml = renderDeterministicHtml({
+      title: extraction?.title || originalArticle.title,
+      sourceUrl: originalArticle.originalUrl,
+      content: extraction?.content || originalArticle.originalContent,
     });
   } else {
     const aiStartTime = Date.now();

@@ -149,3 +149,74 @@ export async function analyzeWithAI(options: AIRequestOptions): Promise<AIServic
     };
   }
 }
+
+/**
+ * Call the configured AI provider to extract and clean content for deterministic rendering.
+ * Used by the 'fast' recipe: AI cleans content, then it's rendered via the static template.
+ */
+export async function extractWithAI(options: {
+  recipe: Recipe;
+  domContent: string;
+  abortSignal?: AbortSignal;
+}): Promise<AIServiceResponse> {
+  const effectiveConfig = await resolveAIConfig();
+
+  const configured = effectiveConfig.provider === 'azure-openai'
+    ? !!((effectiveConfig as AzureOpenAIConfig).endpoint && effectiveConfig.apiKey)
+    : !!effectiveConfig.apiKey;
+
+  if (!configured) {
+    return {
+      success: false,
+      error: 'AI is not configured. Add your API key in Settings (⚙️).',
+    };
+  }
+
+  const { recipe, domContent, abortSignal } = options;
+  const startTime = Date.now();
+
+  console.log(`[Transmogrifier] AI Extract - Starting (${getProviderDisplayName(effectiveConfig.provider)})`);
+
+  const { system, user } = buildPrompt(recipe, domContent, undefined, false);
+  const maxTokens = 16384;
+
+  const controller = new AbortController();
+  if (abortSignal) {
+    abortSignal.addEventListener('abort', () => controller.abort());
+  }
+
+  try {
+    const result = await dispatchAICall(effectiveConfig as AIConfig, system, user, maxTokens, controller.signal);
+    const elapsed = Date.now() - startTime;
+    console.log('[Transmogrifier] Extraction response in', (elapsed / 1000).toFixed(1), 's');
+
+    if (result.error) {
+      return { success: false, error: result.error, usage: result.usage, durationMs: elapsed };
+    }
+
+    if (!result.content) {
+      return { success: false, error: 'No response from AI.', durationMs: elapsed };
+    }
+
+    // Parse as extraction response
+    const { parseExtractionResponse } = await import('@kypflug/transmogrifier-core');
+    const extraction = parseExtractionResponse(result.content);
+
+    return {
+      success: true,
+      data: { html: '', extraction } as any,
+      usage: result.usage,
+      durationMs: elapsed,
+    };
+  } catch (error) {
+    const elapsed = Date.now() - startTime;
+    if (error instanceof Error && error.name === 'AbortError') {
+      return { success: false, error: 'Cancelled by user', durationMs: elapsed };
+    }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      durationMs: elapsed,
+    };
+  }
+}

@@ -1,6 +1,6 @@
 {
   "name": "transmogrifier-extension",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "description": "Microsoft Edge extension that transmogrifies web pages for better focus and readability",
   "type": "module",
   "scripts": {

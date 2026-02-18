@@ -1,6 +1,6 @@
-import { BUILT_IN_RECIPES } from '@kypflug/transmogrifier-core';
+import { BUILT_IN_RECIPES, getRecipe } from '@kypflug/transmogrifier-core';
 
-const FAST_RECIPE_ID = 'fast-no-inference';
+const FAST_RECIPE_ID = 'fast';
 const LEGACY_DEFAULT_RECIPE_ID = 'reader';
 
 export function getDefaultRecipeId(): string {
@@ -10,17 +10,25 @@ export function getDefaultRecipeId(): string {
 }
 
 export function recipeRequiresAI(recipeId: string): boolean {
-  const recipe = BUILT_IN_RECIPES.find(r => r.id === recipeId) as any;
+  const recipe = getRecipe(recipeId) as any;
   if (!recipe) return true;
   if (recipe.renderMode === 'deterministic') return false;
   if (recipe.requiresAI === false) return false;
   return true;
 }
 
+/** True for purely deterministic recipes with no AI at all. */
 export function isDeterministicRecipe(recipeId: string): boolean {
-  const recipe = BUILT_IN_RECIPES.find(r => r.id === recipeId) as any;
+  const recipe = getRecipe(recipeId) as any;
   if (!recipe) return false;
   return recipe.renderMode === 'deterministic' || recipe.requiresAI === false;
+}
+
+/** True for recipes that use AI for content extraction but render with a static template. */
+export function isAIExtractRecipe(recipeId: string): boolean {
+  const recipe = getRecipe(recipeId) as any;
+  if (!recipe) return false;
+  return recipe.renderMode === 'ai-extract';
 }
 
 export function recipeCapabilityLabel(recipeId: string): 'No AI required' | 'AI required' {

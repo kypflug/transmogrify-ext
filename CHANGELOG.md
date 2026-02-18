@@ -2,6 +2,13 @@
 
 All notable changes to Transmogrifier will be documented in this file.
 
+## [0.5.8] - 2026-02-17
+
+### Changed
+- **Hybrid fast recipe** — Fast recipe now uses cloud AI for content extraction, deduplication, and detritus removal while still rendering with the static deterministic template. Recipe ID changed from `fast-no-inference` to `fast`; backward compatibility alias preserved.
+- **New `extractWithAI` path** — Service worker now branches into three render modes: deterministic (no AI), ai-extract (AI cleans content, static template renders), and full AI.
+- **Core 0.1.27** — Updated `@kypflug/transmogrifier-core` for `ai-extract` render mode, `parseExtractionResponse`, and renamed fast recipe.
+
 ## [0.5.7] - 2026-02-17
 
 ### Added
