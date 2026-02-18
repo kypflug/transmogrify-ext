@@ -9,8 +9,7 @@
     "test": "vitest run",
     "update": "node scripts/npm-env.mjs update",
     "lint": "eslint src --ext .ts",
-    "clean": "rimraf dist",
-    "update": "node --env-file=.env -e \"const { spawnSync } = require('node:child_process'); const result = spawnSync('npm update', { stdio: 'inherit', shell: true }); if (result.error) { console.error(result.error); process.exit(1); } process.exit(result.status ?? 1);\""
+    "clean": "rimraf dist"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.0.0-beta.28",
