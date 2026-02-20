@@ -2,6 +2,15 @@
 
 All notable changes to Transmogrifier will be documented in this file.
 
+## [0.5.9] - 2026-02-20
+
+### Changed
+- **Parallel metadata downloads** — OneDrive sync now downloads article metadata in parallel batches of 6 (via `Promise.allSettled`) instead of sequentially. Dramatically reduces sync time for libraries with many articles.
+- **`_index.json` fast bootstrap** — First sync now tries to download a single index file containing all article metadata in one request, instead of making N individual Graph API calls.
+- **Delta token bootstrap** — After an index-based sync, walks the delta API to acquire an incremental token without re-downloading known articles, so subsequent syncs are fast deltas.
+- **Index rebuild on sync** — After any sync with changes, rebuilds and uploads `_index.json` for faster future first-syncs (on new devices or after token expiry).
+- **Parallel `listRemoteArticles()`** — Full article listing fallback now uses the same batched parallel downloads.
+
 ## [0.5.8] - 2026-02-17
 
 ### Changed

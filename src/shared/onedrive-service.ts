@@ -16,6 +16,8 @@ const IMAGE_FOLDER = 'images';
 
 // Delta token persistence key
 const DELTA_TOKEN_KEY = 'onedrive_delta_token';
+const INDEX_FILE = `${APP_FOLDER}/_index.json`;
+const METADATA_CONCURRENCY = 6;
 
 export interface OneDriveArticleMeta {
   id: string;
@@ -50,6 +52,9 @@ export interface DeltaResult {
   /** True when one or more metadata downloads failed during the delta.
    *  Consumers should NOT trust the upserted list as complete. */
   hasDownloadFailures: boolean;
+  /** True when the result came from the _index.json fast path.
+   *  Consumers should call bootstrapDeltaToken() to acquire an incremental token. */
+  usedIndex: boolean;
 }
 
 interface DeltaItem {
@@ -58,6 +63,22 @@ interface DeltaItem {
   '@microsoft.graph.downloadUrl'?: string;
   '@removed'?: { reason: string };
   [key: string]: unknown;
+}
+
+interface MetaDownloadItem {
+  id: string;
+  directUrl?: string;
+}
+
+interface ArticleIndex {
+  version: 1;
+  updatedAt: number;
+  articles: OneDriveArticleMeta[];
+}
+
+export interface BootstrapResult {
+  newMetas: OneDriveArticleMeta[];
+  deletedIds: string[];
 }
 
 /**
@@ -400,14 +421,65 @@ export async function deleteRemoteArticle(id: string): Promise<void> {
   console.log('[OneDrive] Deleted article:', id);
 }
 
+// ─── Batched Parallel Downloads ──────────────────────
+
+/**
+ * Download metadata files in parallel batches of METADATA_CONCURRENCY.
+ * Uses @microsoft.graph.downloadUrl when available to skip a Graph redirect.
+ * 404/410 responses are treated as deletions, not failures.
+ */
+async function downloadMetaBatch(
+  items: MetaDownloadItem[],
+): Promise<{ metas: OneDriveArticleMeta[]; failureCount: number; deletedDuringDownload: string[] }> {
+  const metas: OneDriveArticleMeta[] = [];
+  let failureCount = 0;
+  const deletedDuringDownload: string[] = [];
+
+  for (let i = 0; i < items.length; i += METADATA_CONCURRENCY) {
+    const batch = items.slice(i, i + METADATA_CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map(async (item) => {
+        if (item.directUrl) {
+          const res = await fetch(item.directUrl, { cache: 'no-store' as RequestCache });
+          if (!res.ok) {
+            if (res.status === 404 || res.status === 410) {
+              throw Object.assign(new Error('Gone'), { status: res.status });
+            }
+            throw new Error(`Direct download failed: ${res.status}`);
+          }
+          return res.json() as Promise<OneDriveArticleMeta>;
+        }
+        return downloadArticleMeta(item.id);
+      }),
+    );
+    for (let j = 0; j < results.length; j++) {
+      const result = results[j];
+      if (result.status === 'fulfilled') {
+        metas.push(result.value);
+      } else {
+        const err = result.reason as { status?: number; message?: string };
+        if (err?.status === 404 || err?.status === 410
+            || String(err?.message).includes('(404)') || String(err?.message).includes('(410)')) {
+          deletedDuringDownload.push(batch[j].id);
+        } else {
+          console.warn('[OneDrive] Metadata download failed:', batch[j].id, result.reason);
+          failureCount++;
+        }
+      }
+    }
+  }
+
+  return { metas, failureCount, deletedDuringDownload: [...new Set(deletedDuringDownload)] };
+}
+
 /**
  * List all article metadata files from OneDrive
  * Returns the metadata array and whether any downloads failed.
+ * Downloads metadata in parallel batches for speed.
  */
 export async function listRemoteArticles(): Promise<{ metas: OneDriveArticleMeta[]; hasFailures: boolean }> {
   const headers = await authHeaders();
-  const metas: OneDriveArticleMeta[] = [];
-  let hasFailures = false;
+  const toDownload: MetaDownloadItem[] = [];
 
   // Don't use $filter — consumer OneDrive doesn't support it on /children
   let url: string | null = `${GRAPH_BASE}/me/drive/special/approot:/${APP_FOLDER}:/children?$select=name&$top=200`;
@@ -421,49 +493,55 @@ export async function listRemoteArticles(): Promise<{ metas: OneDriveArticleMeta
 
     const data = await res.json();
 
-    // Download each metadata file's content
+    // Collect metadata files to download
     for (const item of data.value || []) {
       const name: string = item.name;
       if (!name.endsWith('.json')) continue;
       if (name.startsWith('_')) continue; // skip internal files like _index.json
       const id = name.replace('.json', '');
-      try {
-        const meta = await downloadArticleMeta(id);
-        metas.push(meta);
-      } catch {
-        console.warn('[OneDrive] Skipping unreadable metadata:', name);
-        hasFailures = true;
-      }
+      toDownload.push({ id });
     }
 
     url = data['@odata.nextLink'] || null;
   }
 
-  return { metas, hasFailures };
+  const { metas, failureCount } = await downloadMetaBatch(toDownload);
+  return { metas, hasFailures: failureCount > 0 };
 }
 
 /**
- * Get changed files since last sync using delta API
+ * Get changed files since last sync using delta API.
+ * On initial sync (no token), tries _index.json for a fast single-request bootstrap.
+ * Downloads metadata in parallel batches for speed.
  */
 export async function getDelta(): Promise<DeltaResult> {
   const headers = await authHeaders();
   const stored = await chrome.storage.local.get(DELTA_TOKEN_KEY);
   const savedToken = stored[DELTA_TOKEN_KEY] as string | undefined;
+  const isFullResync = !savedToken;
 
-  // Use saved delta token, or start fresh
-  let url: string;
-  if (savedToken) {
-    url = savedToken;
-  } else {
-    url = `${GRAPH_BASE}/me/drive/special/approot:/${APP_FOLDER}:/delta`;
+  // On initial sync, try the index file for a fast single-request bootstrap
+  if (isFullResync) {
+    const indexMetas = await downloadIndex(headers);
+    if (indexMetas !== null) {
+      console.log(`[OneDrive] Index bootstrap: ${indexMetas.length} articles from _index.json`);
+      return {
+        upserted: indexMetas, deleted: [], deltaToken: '',
+        isFullResync: true, hasDownloadFailures: false, usedIndex: true,
+      };
+    }
   }
 
-  const upserted: OneDriveArticleMeta[] = [];
-  const deleted: string[] = [];
-  let newDeltaToken = '';
-  let hasDownloadFailures = false;
+  // Use saved delta token, or start fresh
+  let url: string = savedToken
+    ? savedToken
+    : `${GRAPH_BASE}/me/drive/special/approot:/${APP_FOLDER}:/delta`;
 
-  // Follow pagination
+  const deleted: string[] = [];
+  const toDownload: MetaDownloadItem[] = [];
+  let newDeltaToken = '';
+
+  // Phase 1: Page through delta responses, collecting items to download
   while (url) {
     const res = await fetch(url, { headers, cache: 'no-store' as RequestCache });
 
@@ -472,7 +550,10 @@ export async function getDelta(): Promise<DeltaResult> {
         // Folder gone or delta token expired — do a full resync
         await chrome.storage.local.remove(DELTA_TOKEN_KEY);
         const listing = await listRemoteArticles();
-        return { upserted: listing.metas, deleted: [], deltaToken: '', isFullResync: true, hasDownloadFailures: listing.hasFailures };
+        return {
+          upserted: listing.metas, deleted: [], deltaToken: '',
+          isFullResync: true, hasDownloadFailures: listing.hasFailures, usedIndex: false,
+        };
       }
       throw new Error(`Delta failed (${res.status}): ${res.statusText}`);
     }
@@ -498,22 +579,8 @@ export async function getDelta(): Promise<DeltaResult> {
         if (name.startsWith('_')) continue; // skip internal files like _index.json
 
         const id = name.replace('.json', '');
-        // Use @microsoft.graph.downloadUrl if available (avoids extra API call)
         const directUrl = item['@microsoft.graph.downloadUrl'];
-        try {
-          let meta: OneDriveArticleMeta;
-          if (directUrl) {
-            const res = await fetch(directUrl, { cache: 'no-store' as RequestCache });
-            if (!res.ok) throw new Error(`Direct download failed: ${res.status}`);
-            meta = await res.json();
-          } else {
-            meta = await downloadArticleMeta(id);
-          }
-          upserted.push(meta);
-        } catch {
-          console.warn('[OneDrive] Skipping delta item:', name);
-          hasDownloadFailures = true;
-        }
+        toDownload.push({ id, directUrl });
       }
     }
 
@@ -526,6 +593,16 @@ export async function getDelta(): Promise<DeltaResult> {
     }
   }
 
+  // Phase 2: Batch download all metadata in parallel
+  let hasDownloadFailures = false;
+  const upserted: OneDriveArticleMeta[] = [];
+  if (toDownload.length > 0) {
+    const batch = await downloadMetaBatch(toDownload);
+    upserted.push(...batch.metas);
+    deleted.push(...batch.deletedDuringDownload);
+    hasDownloadFailures = batch.failureCount > 0;
+  }
+
   // Persist the new delta token (only if all downloads succeeded)
   if (newDeltaToken && !hasDownloadFailures) {
     await chrome.storage.local.set({ [DELTA_TOKEN_KEY]: newDeltaToken });
@@ -533,7 +610,7 @@ export async function getDelta(): Promise<DeltaResult> {
     console.warn('[OneDrive] Delta token not saved — metadata download(s) failed; will retry next sync');
   }
 
-  return { upserted, deleted, deltaToken: newDeltaToken, isFullResync: !savedToken, hasDownloadFailures };
+  return { upserted, deleted, deltaToken: newDeltaToken, isFullResync: !savedToken, hasDownloadFailures, usedIndex: false };
 }
 
 /**
@@ -541,6 +618,144 @@ export async function getDelta(): Promise<DeltaResult> {
  */
 export async function resetDeltaToken(): Promise<void> {
   await chrome.storage.local.remove(DELTA_TOKEN_KEY);
+}
+
+// ─── Article Index (_index.json) ─────────────────────
+
+/**
+ * Download the article index for fast first-sync bootstrap.
+ * Returns null if index doesn't exist or is invalid.
+ */
+async function downloadIndex(
+  headers: Record<string, string>,
+): Promise<OneDriveArticleMeta[] | null> {
+  try {
+    const res = await fetch(
+      `${GRAPH_BASE}/me/drive/special/approot:/${INDEX_FILE}:/content`,
+      { headers, cache: 'no-store' as RequestCache },
+    );
+    if (res.status === 404) return null;
+    if (!res.ok) return null;
+    const data: ArticleIndex = await res.json();
+    if (data.version !== 1 || !Array.isArray(data.articles)) return null;
+    console.log(`[OneDrive] Downloaded _index.json: ${data.articles.length} articles (built ${new Date(data.updatedAt).toISOString()})`);
+    return data.articles;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Upload the article index to OneDrive.
+ */
+async function uploadIndex(
+  articles: OneDriveArticleMeta[],
+  headers: Record<string, string>,
+): Promise<void> {
+  const index: ArticleIndex = {
+    version: 1,
+    updatedAt: Date.now(),
+    articles,
+  };
+  const res = await fetch(
+    `${GRAPH_BASE}/me/drive/special/approot:/${INDEX_FILE}:/content`,
+    {
+      method: 'PUT',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify(index),
+      cache: 'no-store' as RequestCache,
+    },
+  );
+  if (!res.ok) {
+    console.warn('[OneDrive] Index upload failed:', res.status);
+  }
+}
+
+/**
+ * Rebuild and upload the _index.json file.
+ * Fire-and-forget — errors are logged but won't break sync.
+ */
+export async function rebuildIndex(articles: OneDriveArticleMeta[]): Promise<void> {
+  try {
+    const headers = await authHeaders();
+    await uploadIndex(articles, headers);
+    console.log(`[OneDrive] Rebuilt _index.json with ${articles.length} articles`);
+  } catch (err) {
+    console.warn('[OneDrive] Failed to rebuild index:', err);
+  }
+}
+
+// ─── Delta Token Bootstrap ──────────────────────────
+
+/**
+ * After an index-based sync, walk through the delta API to acquire a delta
+ * token for future incremental syncs. Only downloads metadata for articles
+ * NOT already in knownIds (discovered via the index).
+ */
+export async function bootstrapDeltaToken(
+  knownIds: Set<string>,
+): Promise<BootstrapResult> {
+  const headers = await authHeaders();
+  let url: string | null = `${GRAPH_BASE}/me/drive/special/approot:/${APP_FOLDER}:/delta`;
+  const toDownload: MetaDownloadItem[] = [];
+  const deletedIds: string[] = [];
+  let finalDeltaLink: string | null = null;
+
+  while (url) {
+    const res = await fetch(url, { headers, cache: 'no-store' as RequestCache });
+    if (!res.ok) {
+      throw new Error(`Delta token bootstrap failed (${res.status}): ${res.statusText}`);
+    }
+
+    const data = await res.json();
+    const items = (data.value || []) as DeltaItem[];
+
+    for (const item of items) {
+      if (item.deleted || item['@removed']) {
+        const name = item.name || '';
+        if (name.startsWith('_')) continue;
+        let deletedId: string | null = null;
+        if (name.endsWith('.json')) deletedId = name.replace('.json', '');
+        else if (name.endsWith('.html')) deletedId = name.replace('.html', '');
+        if (deletedId && knownIds.has(deletedId)) deletedIds.push(deletedId);
+        continue;
+      }
+
+      const name = item.name || '';
+      if (!name || name.startsWith('_') || !name.endsWith('.json')) continue;
+      const id = name.replace('.json', '');
+      // Only download metadata for articles NOT already known from the index
+      if (!knownIds.has(id)) {
+        const directUrl = item['@microsoft.graph.downloadUrl'];
+        toDownload.push({ id, directUrl });
+      }
+    }
+
+    if (data['@odata.deltaLink']) {
+      finalDeltaLink = data['@odata.deltaLink'];
+      url = null;
+    } else {
+      url = data['@odata.nextLink'] || null;
+    }
+  }
+
+  let newMetas: OneDriveArticleMeta[] = [];
+  let hasDownloadFailures = false;
+  if (toDownload.length > 0) {
+    const batch = await downloadMetaBatch(toDownload);
+    newMetas = batch.metas;
+    deletedIds.push(...batch.deletedDuringDownload.filter(id => knownIds.has(id)));
+    hasDownloadFailures = batch.failureCount > 0;
+  }
+
+  if (finalDeltaLink && !hasDownloadFailures) {
+    await chrome.storage.local.set({ [DELTA_TOKEN_KEY]: finalDeltaLink });
+    console.log('[OneDrive] Bootstrap delta token saved');
+  } else if (finalDeltaLink) {
+    console.warn('[OneDrive] Bootstrap delta token NOT saved — some metadata downloads failed');
+  }
+
+  return { newMetas, deletedIds: [...new Set(deletedIds)] };
 }
 
 // ─── Large File Upload (>4MB) ────────────────────────

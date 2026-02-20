@@ -16,7 +16,10 @@ import {
   downloadArticleContent,
   getDelta,
   resetDeltaToken,
+  bootstrapDeltaToken,
+  rebuildIndex,
   type OneDriveArticleMeta,
+  type BootstrapResult,
 } from './onedrive-service';
 import { persistArticleImages } from './image-assets';
 import {
@@ -260,6 +263,27 @@ export async function pullFromCloud(): Promise<{ pulled: number; deleted: number
     }
 
     const delta = await getDelta();
+
+    // If we used the _index.json fast path, bootstrap a delta token
+    // so subsequent syncs are incremental (not full re-listings)
+    if (delta.usedIndex) {
+      try {
+        const knownIds = new Set(delta.upserted.map(a => a.id));
+        const bootstrap: BootstrapResult = await bootstrapDeltaToken(knownIds);
+        // Merge any newly-discovered articles and deletions
+        if (bootstrap.newMetas.length > 0) {
+          delta.upserted.push(...bootstrap.newMetas);
+          console.log(`[Sync] Bootstrap found ${bootstrap.newMetas.length} articles not in index`);
+        }
+        if (bootstrap.deletedIds.length > 0) {
+          delta.deleted.push(...bootstrap.deletedIds);
+          console.log(`[Sync] Bootstrap found ${bootstrap.deletedIds.length} deletions`);
+        }
+      } catch (err) {
+        console.warn('[Sync] Delta token bootstrap failed, will retry next sync:', err);
+      }
+    }
+
     const localArticles = await getAllArticles();
     const localIds = new Set(localArticles.map(a => a.id));
     let pulled = 0;
@@ -419,6 +443,13 @@ export async function pullFromCloud(): Promise<{ pulled: number; deleted: number
     }
 
     console.log(`[Sync] Pull complete: ${pulled} pulled, ${deleted} deleted, ${pushed} reconciled, ${indexChanged} new cloud-only`);
+
+    // Rebuild _index.json for fast future syncs (fire-and-forget)
+    if (pulled > 0 || deleted > 0 || pushed > 0 || indexChanged > 0) {
+      const finalIndex = await getCloudIndex();
+      rebuildIndex(finalIndex).catch(() => {});
+    }
+
     return { pulled, deleted, pushed, indexChanged };
   } catch (err) {
     const errorMsg = String(err);
