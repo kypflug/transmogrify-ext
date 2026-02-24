@@ -12,6 +12,8 @@
 import { isSignedIn } from './auth-service';
 import {
   uploadArticle,
+  uploadArticleMeta,
+  getArticleMetaETag,
   deleteRemoteArticle,
   downloadArticleContent,
   getDelta,
@@ -27,6 +29,7 @@ import {
   getAllArticles,
   deleteArticle as localDelete,
   upsertArticle,
+  toggleFavorite,
   type SavedArticle,
   type ArticleSummary,
 } from './storage-service';
@@ -225,7 +228,6 @@ export async function pushMetaUpdateToCloud(article: SavedArticle): Promise<void
     });
 
     // Only re-upload metadata, not content
-    const { uploadArticleMeta, getArticleMetaETag } = await import('./onedrive-service');
     const eTag = await getArticleMetaETag(article.id);
     await uploadArticleMeta(article.id, meta, eTag ?? undefined);
 
@@ -567,7 +569,6 @@ export async function toggleCloudFavorite(articleId: string): Promise<boolean> {
   if (!article) throw new Error('Article not found in cloud index');
 
   // Now toggle locally (article exists in IndexedDB after download)
-  const { toggleFavorite } = await import('./storage-service');
   const newState = await toggleFavorite(articleId);
 
   // Push updated meta to cloud

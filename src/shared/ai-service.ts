@@ -8,7 +8,7 @@
  */
 
 import { resolveAIConfig, getProviderDisplayName, AzureOpenAIConfig } from './config';
-import { buildPrompt, parseAIResponse, dispatchAICall } from '@kypflug/transmogrifier-core';
+import { buildPrompt, parseAIResponse, parseExtractionResponse, dispatchAICall } from '@kypflug/transmogrifier-core';
 import type { AIResponse, Recipe } from '@kypflug/transmogrifier-core';
 import type { AIConfig } from '@kypflug/transmogrifier-core';
 
@@ -199,7 +199,6 @@ export async function extractWithAI(options: {
     }
 
     // Parse as extraction response
-    const { parseExtractionResponse } = await import('@kypflug/transmogrifier-core');
     const extraction = parseExtractionResponse(result.content);
 
     return {

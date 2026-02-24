@@ -2,6 +2,11 @@
 
 All notable changes to Transmogrifier will be documented in this file.
 
+## [0.5.10] - 2026-02-24
+
+### Fixed
+- **Fast recipe crash in service worker** — Fixed "document is not defined" error when using the Fast recipe. Dynamic `await import()` calls in `ai-service.ts` and `sync-service.ts` caused Vite to inject a modulepreload polyfill that references DOM APIs unavailable in service workers. Converted all dynamic imports to static imports.
+
 ## [0.5.9] - 2026-02-20
 
 ### Changed
