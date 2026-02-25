@@ -2,6 +2,16 @@
 
 All notable changes to Transmogrifier will be documented in this file.
 
+## [0.5.12] - 2026-02-25
+
+### Fixed
+- **Share summary not saved from AI response** — The AI-generated summary was never extracted from the response or persisted to IndexedDB, so share dialogs showed no summary for extension-generated articles. Now saved in both remix and respin paths.
+- **Share summary not synced to OneDrive** — `pushArticleToCloud()` and `pushMetaUpdateToCloud()` omitted the `summary` field from uploaded metadata, stripping it on sync push. Now included.
+- **Lightbox missing in Library reading pane** — `attachLightbox()` was called in the standalone viewer but not in the Library's iframe reader. Images can now be enlarged by clicking in the Library.
+
+### Changed
+- **Core 0.1.34** — Updated `@kypflug/transmogrifier-core` for `summary` field on `AIResponse` type.
+
 ## [0.5.11] - 2026-02-25
 
 ### Added

@@ -818,6 +818,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
   let finalHtml = '';
   let aiExplanation: string | undefined;
   let aiImages: ImagePlaceholder[] = [];
+  let aiSummary: string | undefined;
 
   if (deterministic) {
     await updateRemixProgress(requestId, { status: 'analyzing', step: 'Applying deterministic template...' });
@@ -906,6 +907,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
     aiExplanation = aiResult.data.explanation;
     aiImages = aiResult.data.images || [];
     finalHtml = aiResult.data.html;
+    aiSummary = aiResult.data.summary;
   }
 
   finalHtml = sanitizeOutputHtml(finalHtml);
@@ -963,6 +965,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
       recipeName,
       html: finalHtml,
       originalContent: content,
+      summary: aiSummary,
     });
     
     console.log('[Transmogrifier] Article saved:', savedArticle.id);
@@ -1042,6 +1045,7 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
   let finalHtml = '';
   let aiExplanation: string | undefined;
   let aiImages: ImagePlaceholder[] = [];
+  let aiSummary: string | undefined;
 
   if (deterministic) {
     await updateRemixProgress(requestId, {
@@ -1152,6 +1156,7 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
     aiExplanation = aiResult.data.explanation;
     aiImages = aiResult.data.images || [];
     finalHtml = aiResult.data.html;
+    aiSummary = aiResult.data.summary;
   }
 
   finalHtml = sanitizeOutputHtml(finalHtml);
@@ -1195,6 +1200,7 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
     recipeName,
     html: finalHtml,
     originalContent: originalArticle.originalContent,
+    summary: aiSummary,
   });
 
   // Push to cloud in background

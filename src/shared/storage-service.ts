@@ -203,6 +203,7 @@ export async function saveArticle(data: {
   html: string;
   originalContent?: string;
   thumbnail?: string;
+  summary?: string;
 }): Promise<SavedArticle> {
   const db = await getDB();
   
@@ -219,6 +220,7 @@ export async function saveArticle(data: {
     updatedAt: Date.now(),
     isFavorite: false,
     size: new Blob([data.html]).size,
+    summary: data.summary,
   };
 
   return new Promise((resolve, reject) => {

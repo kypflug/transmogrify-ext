@@ -167,6 +167,7 @@ export async function pushArticleToCloud(article: SavedArticle): Promise<void> {
       isFavorite: article.isFavorite,
       size: new Blob([html]).size,
       images,
+      summary: article.summary,
     });
 
     await uploadArticle(article.id, html, meta);
@@ -225,6 +226,7 @@ export async function pushMetaUpdateToCloud(article: SavedArticle): Promise<void
       isFavorite: article.isFavorite,
       size: article.size,
       images: article.images,
+      summary: article.summary,
     });
 
     // Only re-upload metadata, not content

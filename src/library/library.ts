@@ -14,7 +14,7 @@ import {
 } from '../shared/storage-service';
 import { getMergedArticleList } from '../shared/sync-service';
 import { resolveArticleImages } from '../shared/image-assets';
-import { BUILT_IN_RECIPES } from '@kypflug/transmogrifier-core';
+import { BUILT_IN_RECIPES, attachLightbox } from '@kypflug/transmogrifier-core';
 import type { RemixRequest } from '../shared/types';
 import { getDefaultRecipeId } from '../shared/recipe-capabilities';
 
@@ -115,6 +115,8 @@ const progressElapsed = document.getElementById('progressElapsed') as HTMLElemen
 const progressCancel = document.getElementById('progressCancel') as HTMLButtonElement;
 const readingScrollProgress = document.getElementById('readingScrollProgress') as HTMLElement;
 const readingScrollProgressFill = document.getElementById('readingScrollProgressFill') as HTMLElement;
+
+let cleanupLightbox: (() => void) | null = null;
 
 function setReadingScrollProgress(percent: number): void {
   const clamped = Math.max(0, Math.min(100, percent));
@@ -620,10 +622,12 @@ async function selectArticle(id: string) {
       + '.io,.reveal,.cap{opacity:1!important;transform:none!important}'
       + '</style>';
     contentFrame.srcdoc = renderHtml.replace('</head>', injectedStyles + '</head>');
+    if (cleanupLightbox) { cleanupLightbox(); cleanupLightbox = null; }
     contentFrame.addEventListener('load', () => {
       fixAnchorLinks();
       forwardIframeKeyboard();
       attachReadingScrollProgressTracking();
+      cleanupLightbox = attachLightbox(contentFrame);
     }, { once: true });
 
     // Mobile: switch to reading view
