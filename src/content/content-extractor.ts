@@ -66,6 +66,11 @@ export function extractContent(): ExtractedContent {
     publishDate: extractPublishDate(),
   };
 
+  // Strip leading blocks that duplicate the title/author/date metadata
+  content.mainContent = stripLeadingMetaBlocks(
+    content.mainContent, content.title, content.author, content.publishDate
+  );
+
   // Estimate reading time
   const wordCount = content.mainContent
     .filter(b => b.type === 'paragraph' || b.type === 'heading')
@@ -243,6 +248,79 @@ function deduplicateContent(blocks: ContentBlock[]): ContentBlock[] {
     seenTexts.push(key);
     return true;
   });
+}
+
+/**
+ * Strip leading content blocks that duplicate the page title, author, or publish date.
+ *
+ * Many CMS frameworks (Substack, WordPress, etc.) place the post header
+ * (h1 title, subtitle, byline, date) inside the same <article> that contains
+ * the body text. Since serializeContent() already prepends `# title` and
+ * `*author • date*` from meta tags, these leading blocks would appear twice
+ * in the AI prompt.
+ *
+ * We scan only the first N non-empty blocks (before real body content) and
+ * remove blocks that look like metadata we already have.
+ */
+function stripLeadingMetaBlocks(
+  blocks: ContentBlock[],
+  title?: string,
+  author?: string,
+  publishDate?: string,
+): ContentBlock[] {
+  if (!blocks.length) return blocks;
+
+  const norm = (s?: string) => s?.toLowerCase().replace(/[^a-z0-9]/g, '') ?? '';
+  const normTitle = norm(title);
+  const normAuthor = norm(author);
+
+  // ISO-ish date pattern (covers 2025-12-17T13:03:05.329Z and friendlier formats)
+  const isoDateRe = /\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?/;
+  // Common byline prefixes
+  const bylineRe = /^(by\b|published\b|posted\b|updated\b|written by\b)/i;
+
+  const MAX_SCAN = 10; // only inspect the first N non-empty blocks
+  let scanned = 0;
+  let firstKept = -1;
+
+  const keep = blocks.map((block, idx) => {
+    // Once we've passed the header zone, keep everything
+    if (firstKept >= 0 && idx - firstKept >= 2) return true;
+    // Only scan up to MAX_SCAN non-empty blocks
+    const text = (block.content ?? '').trim();
+    if (!text) return true; // keep whitespace/divider blocks as-is
+    if (scanned >= MAX_SCAN) return true;
+    scanned++;
+
+    const normText = norm(text);
+
+    // Drop headings that match the title (>70% overlap either direction)
+    if (block.type === 'heading' && normTitle) {
+      const shorter = normText.length <= normTitle.length ? normText : normTitle;
+      const longer = normText.length > normTitle.length ? normText : normTitle;
+      if (longer.includes(shorter) && shorter.length / longer.length > 0.7) {
+        return false;
+      }
+    }
+
+    // Drop short paragraphs that look like metadata
+    if (block.type === 'paragraph' && text.length < 200) {
+      // Contains the author's name
+      if (normAuthor && normAuthor.length > 2 && normText.includes(normAuthor)) return false;
+      // Contains a raw ISO date
+      if (isoDateRe.test(text)) return false;
+      // Starts with a byline keyword
+      if (bylineRe.test(text)) return false;
+      // Contains the publish date string verbatim
+      if (publishDate && norm(publishDate) && normText.includes(norm(publishDate))) return false;
+    }
+
+    // This block is real content — mark it
+    if (firstKept < 0) firstKept = idx;
+    return true;
+  });
+
+  return blocks.filter((_, i) => keep[i]);
 }
 
 function findMainContent(): Element | null {
