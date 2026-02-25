@@ -184,14 +184,27 @@ async function init() {
     const animOverride = '<style>.io,.reveal,.cap{opacity:1!important;transform:none!important}</style>';
     detachViewerProgressTracking();
     resetViewerProgress();
+
+    // Register the load handler BEFORE setting srcdoc to avoid a race
+    // condition where the iframe fires 'load' synchronously before the
+    // listener is attached.
+    contentFrame.onload = () => {
+      // The contentDocument may not be fully settled yet (iOS Safari
+      // can replace it after load). Retry until body has children.
+      let attempts = 0;
+      function trySetup() {
+        const doc = contentFrame.contentDocument;
+        if (!doc || !doc.body || !doc.body.childElementCount) {
+          if (++attempts < 10) { requestAnimationFrame(trySetup); }
+          return;
+        }
+        fixAnchorLinks();
+        attachLightbox(contentFrame);
+        attachViewerProgressTracking();
+      }
+      trySetup();
+    };
     contentFrame.srcdoc = renderHtml.replace('</head>', animOverride + '</head>');
-    
-    // Fix anchor links after iframe loads
-    contentFrame.addEventListener('load', () => {
-      fixAnchorLinks();
-      attachLightbox(contentFrame);
-      attachViewerProgressTracking();
-    });
 
     // Show viewer
     loadingState.classList.add('hidden');
