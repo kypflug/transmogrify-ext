@@ -1014,6 +1014,42 @@ body {
   margin-top: 6px;
 }
 
+/* Share with summary */
+.share-summary-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--edge-border);
+}
+
+.share-summary-section label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--edge-text-secondary);
+  margin-bottom: 6px;
+}
+
+.share-summary-text {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--edge-border);
+  border-radius: var(--edge-radius);
+  background: var(--edge-surface-sunken);
+  color: var(--edge-text-primary);
+  font-family: var(--lib-font);
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+  white-space: pre-wrap;
+}
+
+.share-summary-section .btn {
+  margin-top: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
 .share-toast {
   position: fixed;
   bottom: 20px;

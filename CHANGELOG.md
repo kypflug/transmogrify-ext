@@ -2,6 +2,17 @@
 
 All notable changes to Transmogrifier will be documented in this file.
 
+## [0.5.11] - 2026-02-25
+
+### Added
+- **Share with summary** — Share dialog now stays open after sharing, showing the URL and a "Copy with summary" option that copies Title + Summary + URL to the clipboard. AI-generated summaries are produced during remix and stored in article metadata.
+- **Lightbox image viewer** — Tap any image in the article viewer to enlarge it in a full-viewport overlay. Dismiss by clicking/tapping or pressing Escape. Shared article pages also include the lightbox.
+- **Social meta tags on shared articles** — Shared HTML now includes Open Graph `description` and `image` tags for richer social media preview cards.
+
+### Changed
+- **Share dialog no longer auto-dismisses** — After sharing, the dialog transforms in-place to show the share URL with copy buttons, matching the PWA behavior.
+- **Core 0.1.33** — Updated `@kypflug/transmogrifier-core` for summary fields, `injectOGTags` description parameter, `injectLightbox`, and `attachLightbox`.
+
 ## [0.5.10] - 2026-02-24
 
 ### Fixed

@@ -696,6 +696,7 @@ async function handleMessage(message: RemixMessage): Promise<RemixResponse> {
           article.title,
           message.payload?.expiresAt,
           article.images,
+          { summary: article.summary, originalUrl: article.originalUrl },
         );
 
         return {

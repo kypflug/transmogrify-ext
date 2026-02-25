@@ -1,6 +1,6 @@
 {
   "name": "transmogrifier-extension",
-  "version": "0.5.10",
+  "version": "0.5.11",
   "description": "Microsoft Edge extension that transmogrifies web pages for better focus and readability",
   "type": "module",
   "scripts": {
@@ -14,6 +14,7 @@
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.0.0-beta.28",
     "@eslint/js": "^9.19.0",
+    "@kypflug/transmogrifier-core": "^0.1.33",
     "@types/chrome": "^0.0.287",
     "eslint": "^9.19.0",
     "fake-indexeddb": "^6.2.5",
@@ -31,8 +32,5 @@
     "reading-mode",
     "dom-manipulation"
   ],
-  "license": "MIT",
-  "dependencies": {
-    "@kypflug/transmogrifier-core": "^0.1.26"
-  }
+  "license": "MIT"
 }

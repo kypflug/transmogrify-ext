@@ -32,6 +32,8 @@ export interface SavedArticle {
   shareExpiresAt?: number; // Optional expiration (epoch ms)
   /** Why RSS content was not used (or blocked-source fallback marker) */
   rssFallbackReason?: string;
+  /** AI-generated summary/abstract for sharing (tweet-length) */
+  summary?: string;
 }
 
 export interface ArticleSummary {

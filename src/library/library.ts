@@ -709,32 +709,66 @@ function handleNewTab() {
 
 // ─── Share ───────────────────────────────────────────
 
+/** Build the "already shared" modal body with URL, share-with-summary, and unshare */
+function renderSharedModalContent(shareUrl: string, title: string, summary?: string, expiresAt?: number) {
+  const summaryBlock = summary
+    ? `
+      <div class="share-summary-section">
+        <label>Share with summary</label>
+        <textarea class="share-summary-text" id="shareSummaryText" readonly rows="4">${escapeAttr(title)}\n\n${escapeAttr(summary)}\n\n${escapeAttr(shareUrl)}</textarea>
+        <button class="btn btn-secondary" id="copySummaryBtn" title="Copy title + summary + URL">📋 Copy with summary</button>
+      </div>
+    `
+    : '';
+
+  shareModalBody.innerHTML = `
+    <p>This article is shared:</p>
+    <div class="share-url-row">
+      <input type="text" class="share-url-input" id="shareUrlInput" value="${escapeAttr(shareUrl)}" readonly>
+      <button class="btn btn-secondary" id="copyShareUrlBtn" title="Copy URL to clipboard">📋</button>
+    </div>
+    ${expiresAt ? `<p class="share-expires">Expires: ${new Date(expiresAt).toLocaleDateString()}</p>` : ''}
+    ${summaryBlock}
+  `;
+  shareModalFooter.innerHTML = `
+    <button class="modal-btn cancel" id="cancelShareBtn2">Close</button>
+    <button class="modal-btn danger" id="unshareBtn">Unshare</button>
+  `;
+
+  // Wire up copy URL button
+  document.getElementById('copyShareUrlBtn')!.addEventListener('click', () => {
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      document.getElementById('copyShareUrlBtn')!.textContent = '✓';
+      setTimeout(() => { document.getElementById('copyShareUrlBtn')!.textContent = '📋'; }, 2000);
+    });
+  });
+
+  // Wire up copy-with-summary button
+  if (summary) {
+    document.getElementById('copySummaryBtn')!.addEventListener('click', () => {
+      const text = `${title}\n\n${summary}\n\n${shareUrl}`;
+      navigator.clipboard.writeText(text).then(() => {
+        document.getElementById('copySummaryBtn')!.textContent = '✓ Copied';
+        setTimeout(() => { document.getElementById('copySummaryBtn')!.textContent = '📋 Copy with summary'; }, 2000);
+      });
+    });
+  }
+
+  document.getElementById('cancelShareBtn2')!.addEventListener('click', () => shareModal.classList.add('hidden'));
+  document.getElementById('unshareBtn')!.addEventListener('click', handleUnshare);
+}
+
 function handleShareClick() {
   if (!currentArticle) return;
 
   if (currentArticle.sharedUrl) {
     // Already shared — show existing link with copy + unshare options
-    shareModalBody.innerHTML = `
-      <p>This article is shared:</p>
-      <div class="share-url-row">
-        <input type="text" class="share-url-input" id="shareUrlInput" value="${escapeAttr(currentArticle.sharedUrl)}" readonly>
-        <button class="btn btn-secondary" id="copyShareUrlBtn" title="Copy to clipboard">📋</button>
-      </div>
-      ${currentArticle.shareExpiresAt ? `<p class="share-expires">Expires: ${new Date(currentArticle.shareExpiresAt).toLocaleDateString()}</p>` : ''}
-    `;
-    shareModalFooter.innerHTML = `
-      <button class="modal-btn cancel" id="cancelShareBtn2">Close</button>
-      <button class="modal-btn danger" id="unshareBtn">Unshare</button>
-    `;
-    // Wire up dynamic buttons
-    document.getElementById('copyShareUrlBtn')!.addEventListener('click', () => {
-      navigator.clipboard.writeText(currentArticle!.sharedUrl!).then(() => {
-        document.getElementById('copyShareUrlBtn')!.textContent = '✓';
-        setTimeout(() => { document.getElementById('copyShareUrlBtn')!.textContent = '📋'; }, 2000);
-      });
-    });
-    document.getElementById('cancelShareBtn2')!.addEventListener('click', () => shareModal.classList.add('hidden'));
-    document.getElementById('unshareBtn')!.addEventListener('click', handleUnshare);
+    renderSharedModalContent(
+      currentArticle.sharedUrl,
+      currentArticle.title,
+      currentArticle.summary,
+      currentArticle.shareExpiresAt,
+    );
   } else {
     // Not shared — show share form
     shareModalBody.innerHTML = `
@@ -787,16 +821,17 @@ async function handleShareConfirm() {
         shareExpiresAt: expiresAt,
       });
 
-      // Copy to clipboard
-      await navigator.clipboard.writeText(response.shareResult.shareUrl);
-
       // Refresh currentArticle
       currentArticle = await getArticle(currentArticle.id);
-      shareModal.classList.add('hidden');
       updateShareButtonState();
 
-      // Show brief confirmation
-      showShareToast('Link copied to clipboard!');
+      // Transform dialog in-place to show the shared URL (don't auto-dismiss)
+      renderSharedModalContent(
+        response.shareResult.shareUrl,
+        currentArticle!.title,
+        currentArticle!.summary,
+        expiresAt,
+      );
     } else {
       alert(response?.error || 'Failed to share article');
     }

@@ -24,6 +24,7 @@ import {
   deleteImageBlobs,
   validateBlobConfig,
   injectOGTags,
+  injectLightbox,
   rewriteTmgAssetUrls,
 } from '@kypflug/transmogrifier-core';
 
@@ -38,6 +39,7 @@ async function registerShortLink(
   accessToken: string,
   cloudUrl: string,
   expiresAt?: number,
+  meta?: { description?: string; originalUrl?: string; image?: string },
 ): Promise<{ shortCode: string; shareUrl: string }> {
   const response = await fetch(`${cloudUrl}/api/share`, {
     method: 'POST',
@@ -47,6 +49,9 @@ async function registerShortLink(
       title,
       accessToken,
       ...(expiresAt ? { expiresAt } : {}),
+      ...(meta?.description ? { description: meta.description } : {}),
+      ...(meta?.originalUrl ? { originalUrl: meta.originalUrl } : {}),
+      ...(meta?.image ? { image: meta.image } : {}),
     }),
   });
 
@@ -147,6 +152,7 @@ export async function shareArticle(
   title: string,
   expiresAt?: number,
   images?: OneDriveImageAsset[],
+  meta?: { summary?: string; originalUrl?: string },
 ): Promise<ShareResult> {
   const config = await getEffectiveSharingConfig();
   if (!config) {
@@ -166,18 +172,28 @@ export async function shareArticle(
     shareHtml = await uploadImagesToBlob(shareHtml, articleId, images, config);
   }
 
-  // 2. Inject OG tags and upload to blob
+  // 2. Inject OG tags and lightbox, then upload to blob
   const shareUrlPlaceholder = 'https://transmogrifia.app/shared/';
-  const htmlWithOG = injectOGTags(shareHtml, title, shareUrlPlaceholder);
-  const resultBlobUrl = await uploadHtmlBlob(htmlWithOG, articleId, config);
+  const htmlWithOG = injectOGTags(shareHtml, title, shareUrlPlaceholder, meta?.summary);
+  const htmlWithLightbox = injectLightbox(htmlWithOG);
+  const resultBlobUrl = await uploadHtmlBlob(htmlWithLightbox, articleId, config);
 
-  // 3. Register short link
+  // 3. Extract first image from HTML for social preview
+  const imgMatch = shareHtml.match(/<img[^>]+src=["']?(https?:\/\/[^"'\s>]+)/i);
+  const firstImage = imgMatch ? imgMatch[1] : undefined;
+
+  // 4. Register short link with metadata
   const { shortCode, shareUrl } = await registerShortLink(
     resultBlobUrl,
     title,
     accessToken,
     cloudUrl,
     expiresAt,
+    {
+      description: meta?.summary,
+      originalUrl: meta?.originalUrl,
+      image: firstImage,
+    },
   );
 
   return { shareUrl, blobUrl: resultBlobUrl, shortCode };

@@ -519,6 +519,7 @@ async function saveOrUpdateArticle(
     isFavorite: meta.isFavorite,
     size: new Blob([cleanHtml]).size,
     rssFallbackReason: meta.rssFallbackReason,
+    summary: meta.summary,
   };
 
   return upsertArticle(article);

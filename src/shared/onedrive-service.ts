@@ -31,6 +31,8 @@ export interface OneDriveArticleMeta {
   size: number;
   images?: OneDriveImageAsset[];
   rssFallbackReason?: string;
+  /** AI-generated summary/abstract for sharing (tweet-length) */
+  summary?: string;
   // Sharing fields (optional)
   sharedUrl?: string;
   sharedBlobUrl?: string;

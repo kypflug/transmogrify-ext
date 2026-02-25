@@ -5,7 +5,7 @@
 
 import { getArticle, toggleFavorite, deleteArticle, exportArticleToFile, updateArticleShareStatus, SavedArticle } from '../shared/storage-service';
 import { resolveArticleImages } from '../shared/image-assets';
-import { BUILT_IN_RECIPES } from '@kypflug/transmogrifier-core';
+import { BUILT_IN_RECIPES, attachLightbox } from '@kypflug/transmogrifier-core';
 import { getDefaultRecipeId } from '../shared/recipe-capabilities';
 
 // Get article ID from URL
@@ -189,6 +189,7 @@ async function init() {
     // Fix anchor links after iframe loads
     contentFrame.addEventListener('load', () => {
       fixAnchorLinks();
+      attachLightbox(contentFrame);
       attachViewerProgressTracking();
     });
 
