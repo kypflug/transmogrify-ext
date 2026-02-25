@@ -210,9 +210,12 @@ function extractMainContent(): ContentBlock[] {
  * Remove near-duplicate content blocks.
  * Loosened extraction filters can let footer/repeated boilerplate through;
  * this pass keeps only the first occurrence of each normalised text.
+ * Also catches substring duplicates — if a block's text is a substantial
+ * portion (>60%) of an already-seen block, it's a fragment duplicate.
  */
 function deduplicateContent(blocks: ContentBlock[]): ContentBlock[] {
   const seen = new Set<string>();
+  const seenTexts: string[] = []; // For substring checks
   return blocks.filter(block => {
     // Only deduplicate text-bearing block types
     if (block.type === 'image' || block.type === 'video' || block.type === 'embed' || block.type === 'divider') {
@@ -223,8 +226,21 @@ function deduplicateContent(blocks: ContentBlock[]): ContentBlock[] {
     // Normalise: lowercase, collapse whitespace, strip punctuation
     const key = text.toLowerCase().replace(/\s+/g, ' ').replace(/[^\w\s]/g, '');
     if (!key) return true;
+    // Exact duplicate check
     if (seen.has(key)) return false;
+    // Substring duplicate check: drop blocks that are substantial fragments
+    // of an already-seen block (catches span-inside-paragraph duplicates)
+    if (key.length >= 30) {
+      for (const prev of seenTexts) {
+        const shorter = key.length <= prev.length ? key : prev;
+        const longer = key.length > prev.length ? key : prev;
+        if (longer.includes(shorter) && shorter.length / longer.length > 0.6) {
+          return false;
+        }
+      }
+    }
     seen.add(key);
+    seenTexts.push(key);
     return true;
   });
 }
@@ -334,6 +350,7 @@ function elementToBlock(el: HTMLElement, processed: Set<Element>): ContentBlock 
     const text = preserveInlineMarkup(el);
     if (text.length > 0) {
       processed.add(el);
+      el.querySelectorAll('*').forEach(child => processed.add(child));
       return {
         type: 'heading',
         level: parseInt(tag[1]),
@@ -347,6 +364,7 @@ function elementToBlock(el: HTMLElement, processed: Set<Element>): ContentBlock 
     const text = el.textContent?.trim();
     if (text) {
       processed.add(el);
+      el.querySelectorAll('*').forEach(child => processed.add(child));
       return {
         type: 'paragraph',
         content: preserveInlineMarkup(el),
@@ -400,6 +418,7 @@ function elementToBlock(el: HTMLElement, processed: Set<Element>): ContentBlock 
     });
     if (items.length > 0) {
       processed.add(el);
+      el.querySelectorAll('*').forEach(child => processed.add(child));
       return {
         type: 'list',
         content: '',
@@ -415,6 +434,7 @@ function elementToBlock(el: HTMLElement, processed: Set<Element>): ContentBlock 
     const text = code.textContent?.trim();
     if (text && text.length > 10) {
       processed.add(el);
+      el.querySelectorAll('*').forEach(child => processed.add(child));
       const language = detectCodeLanguage(el);
       return {
         type: 'code',
@@ -429,6 +449,7 @@ function elementToBlock(el: HTMLElement, processed: Set<Element>): ContentBlock 
     const text = preserveInlineMarkup(el);
     if (text) {
       processed.add(el);
+      el.querySelectorAll('*').forEach(child => processed.add(child));
       return {
         type: 'quote',
         content: text,
@@ -458,6 +479,7 @@ function elementToBlock(el: HTMLElement, processed: Set<Element>): ContentBlock 
 
     if (rows.length > 0) {
       processed.add(el);
+      el.querySelectorAll('*').forEach(child => processed.add(child));
       return {
         type: 'table',
         content: '',
@@ -546,8 +568,11 @@ function elementToBlock(el: HTMLElement, processed: Set<Element>): ContentBlock 
     return null;
   }
 
-  // Div/span/section acting as a paragraph (has direct text, no block-level children)
-  if (tag === 'div' || tag === 'section' || tag === 'span') {
+  // Div/section acting as a paragraph (has direct text, no block-level children)
+  // Note: <span> is excluded — it's an inline element whose content is already
+  // captured by its parent's preserveInlineMarkup() call. Including it here caused
+  // duplicate paragraph fragments on sites like Substack that wrap plain text in spans.
+  if (tag === 'div' || tag === 'section') {
     const text = el.textContent?.trim();
     if (text && text.length > 20) {
       // Only treat as paragraph if it has meaningful direct text content
@@ -555,6 +580,7 @@ function elementToBlock(el: HTMLElement, processed: Set<Element>): ContentBlock 
       const hasBlockChildren = el.querySelector('p, h1, h2, h3, h4, h5, h6, ul, ol, table, blockquote, pre, figure, div');
       if (!hasBlockChildren) {
         processed.add(el);
+        el.querySelectorAll('*').forEach(child => processed.add(child));
         return {
           type: 'paragraph',
           content: preserveInlineMarkup(el),

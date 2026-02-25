@@ -12,6 +12,36 @@ import { buildPrompt, parseAIResponse, parseExtractionResponse, dispatchAICall }
 import type { AIResponse, Recipe } from '@kypflug/transmogrifier-core';
 import type { AIConfig } from '@kypflug/transmogrifier-core';
 
+/**
+ * Count paragraph blocks in serialized content.
+ * Paragraphs are plain text lines separated by blank lines, excluding
+ * headings (#), images (!), lists (-/1.), quotes (>), code blocks (```).
+ */
+function countParagraphs(content: string): number {
+  const lines = content.split('\n');
+  let count = 0;
+  let inCodeBlock = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('```')) {
+      inCodeBlock = !inCodeBlock;
+      continue;
+    }
+    if (inCodeBlock) continue;
+    if (!trimmed) continue; // blank line
+    if (trimmed.startsWith('#')) continue; // heading
+    if (trimmed.startsWith('!')) continue; // image
+    if (trimmed.startsWith('>')) continue; // quote
+    if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || /^\d+\.\s/.test(trimmed)) continue; // list
+    if (trimmed.startsWith('---')) continue; // divider
+    if (trimmed.startsWith('|')) continue; // table
+    if (trimmed.startsWith('[Video]') || trimmed.startsWith('[Embedded')) continue;
+    if (trimmed.startsWith('*') && trimmed.endsWith('*') && trimmed.length < 100) continue; // metadata line
+    count++;
+  }
+  return count;
+}
+
 export interface AIRequestOptions {
   recipe: Recipe;
   domContent: string; // Now actually semantic content
@@ -66,7 +96,9 @@ export async function analyzeWithAI(options: AIRequestOptions): Promise<AIServic
   console.log('[Transmogrifier] Recipe:', recipe.id, 'Include images:', includeImages);
   console.log('[Transmogrifier] Content length:', domContent.length, 'chars');
   
-  const { system, user } = buildPrompt(recipe, domContent, customPrompt, includeImages);
+  const { system, user } = buildPrompt(recipe, domContent, customPrompt, includeImages, {
+    paragraphCount: countParagraphs(domContent),
+  });
   
   console.log('[Transmogrifier] System prompt length:', system.length, 'chars');
   console.log('[Transmogrifier] User prompt length:', user.length, 'chars');
