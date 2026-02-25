@@ -202,7 +202,7 @@ async function init() {
         attachLightbox(contentFrame);
         attachViewerProgressTracking();
       }
-      trySetup();
+      requestAnimationFrame(trySetup);
     };
     contentFrame.srcdoc = renderHtml.replace('</head>', animOverride + '</head>');
 
