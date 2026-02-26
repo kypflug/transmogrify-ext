@@ -2,6 +2,12 @@
 
 All notable changes to Transmogrifier will be documented in this file.
 
+## [0.5.13] - 2026-02-26
+
+### Fixed
+- **Fast recipe stylesheet mismatch** — Extension used a plain local template (system fonts, OS colors) while the cloud used the canonical `FAST_DETERMINISTIC_TEMPLATE` from `@kypflug/transmogrifier-core` (Bricolage Grotesque + Newsreader, warm palette, card layout). Now imports the core template so extension and cloud output match.
+- **Fast recipe missing excerpt and author** — AI-extracted excerpt and author were not passed to the deterministic renderer; now populated in the meta line and lede paragraph.
+
 ## [0.5.12] - 2026-02-25
 
 ### Fixed

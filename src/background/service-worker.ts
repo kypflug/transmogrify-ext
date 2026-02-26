@@ -859,6 +859,8 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
       title: extraction?.title || pageTitle,
       sourceUrl: tab.url || '',
       content: extraction?.content || content,
+      excerpt: extraction?.excerpt,
+      author: extraction?.author,
     });
   } else {
     // Call AI service to generate HTML with elapsed time updates
@@ -1102,6 +1104,8 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
       title: extraction?.title || originalArticle.title,
       sourceUrl: originalArticle.originalUrl,
       content: extraction?.content || originalArticle.originalContent,
+      excerpt: extraction?.excerpt,
+      author: extraction?.author,
     });
   } else {
     const aiStartTime = Date.now();
