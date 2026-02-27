@@ -2,6 +2,14 @@
 
 All notable changes to Transmogrifier will be documented in this file.
 
+## [0.5.15] - 2026-02-27
+
+### Fixed
+- **Author sanitization** — Reject infrastructure providers (Cloudflare, Vercel, AWS…), CMS platforms (WordPress, Ghost…), and generic terms (admin, staff) from author attribution. Prevents proxy workers and hosting platforms from being credited as article authors.
+
+### Changed
+- **Core 0.1.36** — Updated `@kypflug/transmogrifier-core` with `sanitizeAuthor()` blocklist and improved Fast recipe author instruction.
+
 ## [0.5.14] - 2026-02-27
 
 ### Added
