@@ -856,6 +856,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
     }
 
     const extraction = (extractResult.data as any)?.extraction;
+    aiSummary = extraction?.excerpt;
     finalHtml = renderDeterministicHtml({
       title: extraction?.title || pageTitle,
       sourceUrl: tab.url || '',
