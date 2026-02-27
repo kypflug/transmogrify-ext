@@ -7,7 +7,7 @@
 import { RemixMessage, RemixResponse, GeneratedImageData, RemixRequest } from '../shared/types';
 import { loadPreferences, savePreferences } from '../shared/utils';
 import { analyzeWithAI, extractWithAI } from '../shared/ai-service';
-import { getRecipe, BUILT_IN_RECIPES, sanitizeOutputHtml, resolveRelativeUrls } from '@kypflug/transmogrifier-core';
+import { getRecipe, BUILT_IN_RECIPES, sanitizeOutputHtml, resolveRelativeUrls, sanitizeAuthor } from '@kypflug/transmogrifier-core';
 import type { ImagePlaceholder } from '@kypflug/transmogrifier-core';
 import { generateImages, base64ToDataUrl, ImageGenerationRequest } from '../shared/image-service';
 import { isImageConfiguredAsync } from '../shared/config';
@@ -861,7 +861,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
       sourceUrl: tab.url || '',
       content: extraction?.content || content,
       excerpt: extraction?.excerpt,
-      author: extraction?.author,
+      author: sanitizeAuthor(extraction?.author),
     });
   } else {
     // Call AI service to generate HTML with elapsed time updates
@@ -1106,7 +1106,7 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
       sourceUrl: originalArticle.originalUrl,
       content: extraction?.content || originalArticle.originalContent,
       excerpt: extraction?.excerpt,
-      author: extraction?.author,
+      author: sanitizeAuthor(extraction?.author),
     });
   } else {
     const aiStartTime = Date.now();

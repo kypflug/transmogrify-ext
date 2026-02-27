@@ -4,7 +4,7 @@
  * Focuses on CONTENT not DOM structure
  */
 
-import { isContentIframe } from '@kypflug/transmogrifier-core';
+import { isContentIframe, sanitizeAuthor } from '@kypflug/transmogrifier-core';
 
 export interface ExtractedContent {
   title: string;
@@ -109,7 +109,7 @@ function extractFavicon(): string | undefined {
 function extractAuthor(): string | undefined {
   // 1. meta[name="author"]
   const metaAuthor = document.querySelector('meta[name="author"]')?.getAttribute('content');
-  if (metaAuthor) return metaAuthor;
+  if (metaAuthor) return sanitizeAuthor(metaAuthor);
 
   // 2. meta[property="article:author"] (Open Graph)
   const ogAuthor = document.querySelector('meta[property="article:author"]')?.getAttribute('content');
@@ -120,11 +120,11 @@ function extractAuthor(): string | undefined {
     try {
       const data = JSON.parse(script.textContent || '');
       const name = extractAuthorFromLdJson(data);
-      if (name) return name;
+      if (name) return sanitizeAuthor(name);
     } catch { /* ignore malformed JSON */ }
   }
 
-  return ogAuthor || undefined;
+  return sanitizeAuthor(ogAuthor || undefined);
 }
 
 /**
