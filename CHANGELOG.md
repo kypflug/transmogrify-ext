@@ -2,6 +2,16 @@
 
 All notable changes to Transmogrifier will be documented in this file.
 
+## [0.5.14] - 2026-02-27
+
+### Added
+- **On-device AI (Fast recipe)** — When the browser supports the Prompt API (Edge 138+ with Phi 4 Mini), the Fast recipe can clean article content entirely on-device — no API key or internet needed. Enabled by default when available; toggle in Settings under "🧠 On-Device AI".
+- **On-Device AI settings section** — New settings panel shows model availability status and lets you enable/disable on-device mode. Directs to `edge://settings/ai` if model download is needed.
+
+### Changed
+- **Core 0.1.35** — Updated `@kypflug/transmogrifier-core` for improved extraction prompts: delimiters around extracted content, lede preservation, AI-generated excerpt (instead of lead paragraph copy), and anti-echo instruction.
+- **Popup status indicator** — Shows "Ready (On-device AI)" when on-device mode is active for the Fast recipe, and labels the recipe tile "On-device AI" instead of "AI required".
+
 ## [0.5.13] - 2026-02-26
 
 ### Fixed

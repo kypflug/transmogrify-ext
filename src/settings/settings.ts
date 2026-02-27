@@ -16,6 +16,12 @@ import {
 } from '../shared/settings-service';
 import { isSignedIn } from '../shared/auth-service';
 import { redeemGiftToken } from '../shared/gift-token';
+import {
+  checkPromptAPIAvailability,
+  loadOnDevicePrefs,
+  saveOnDevicePrefs,
+  type PromptAPIAvailability,
+} from '../shared/prompt-api-service';
 
 // ─── DOM References ────────────────
 
@@ -54,6 +60,11 @@ const pullSettingsBtn = document.getElementById('pullSettingsBtn')!;
 const syncBadge = document.getElementById('syncBadge')!;
 const syncStatus = document.getElementById('syncStatus')!;
 
+// On-Device AI
+const onDeviceToggle = document.getElementById('onDeviceToggle') as HTMLInputElement;
+const onDeviceBadge = document.getElementById('onDeviceBadge')!;
+const onDeviceStatus = document.getElementById('onDeviceStatus')!;
+
 // Danger
 const clearSettingsBtn = document.getElementById('clearSettingsBtn')!;
 
@@ -77,6 +88,9 @@ async function init() {
 
   // Update sync status
   await updateSyncStatus();
+
+  // Initialize on-device AI section
+  await initOnDeviceSection();
 }
 
 // ─── Form Population ────────────────
@@ -295,6 +309,12 @@ function setupEventListeners() {
 
   // Gift token
   setupGiftToken();
+
+  // On-device toggle
+  onDeviceToggle.addEventListener('change', async () => {
+    await saveOnDevicePrefs({ enabled: onDeviceToggle.checked });
+    await updateOnDeviceBadge(await checkPromptAPIAvailability());
+  });
 
   // Clear all
   clearSettingsBtn.addEventListener('click', handleClearSettings);
@@ -525,6 +545,45 @@ function setupGiftToken() {
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') handleRedeem();
   });
+}
+
+// ─── Handler: On-Device AI ────────────────
+
+async function initOnDeviceSection() {
+  const prefs = await loadOnDevicePrefs();
+  onDeviceToggle.checked = prefs.enabled;
+
+  const availability = await checkPromptAPIAvailability();
+  await saveOnDevicePrefs({ lastAvailability: availability, lastCheckedAt: Date.now() });
+  await updateOnDeviceBadge(availability);
+}
+
+async function updateOnDeviceBadge(availability: PromptAPIAvailability) {
+  const prefs = await loadOnDevicePrefs();
+
+  switch (availability) {
+    case 'available':
+      if (prefs.enabled) {
+        onDeviceBadge.textContent = 'Active';
+        onDeviceBadge.className = 'section-badge configured';
+      } else {
+        onDeviceBadge.textContent = 'Disabled';
+        onDeviceBadge.className = 'section-badge';
+      }
+      onDeviceStatus.textContent = 'Model is downloaded and ready.';
+      break;
+    case 'downloadable':
+      onDeviceBadge.textContent = 'Download needed';
+      onDeviceBadge.className = 'section-badge warning';
+      onDeviceStatus.textContent = 'The AI model is available but needs to be downloaded. Open edge://settings/ai to manage model downloads.';
+      break;
+    case 'unavailable':
+      onDeviceBadge.textContent = 'Unavailable';
+      onDeviceBadge.className = 'section-badge';
+      onDeviceToggle.disabled = true;
+      onDeviceStatus.textContent = 'On-device AI is not available in this browser. Requires Microsoft Edge 138+ with Prompt API support.';
+      break;
+  }
 }
 
 // ─── Start ────────────────

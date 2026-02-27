@@ -173,6 +173,22 @@ body {
   line-height: 1.5;
 }
 
+/* ─── On-Device AI ─── */
+.toggle-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.on-device-status {
+  font-size: 12px;
+  color: var(--edge-text-secondary);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
 /* ─── Form Fields ─── */
 .field-row {
   margin-bottom: 12px;

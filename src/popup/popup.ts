@@ -8,12 +8,14 @@ import { RemixMessage, RemixRequest } from '../shared/types';
 import { BUILT_IN_RECIPES } from '@kypflug/transmogrifier-core';
 import { isAIConfiguredAsync, isImageConfiguredAsync } from '../shared/config';
 import { getDefaultRecipeId, recipeCapabilityLabel, recipeRequiresAI } from '../shared/recipe-capabilities';
+import { shouldUseOnDevice } from '../shared/prompt-api-service';
 
 // State
 let selectedRecipeId = getDefaultRecipeId();
 let pinnedRecipeIds: string[] = [];
 let pollingIntervalId: ReturnType<typeof setInterval> | null = null;
 let aiConfigured = false;
+let onDeviceAvailable = false;
 
 // DOM Elements
 const openLibraryBtn = document.getElementById('openLibraryBtn')!;
@@ -60,6 +62,9 @@ async function init() {
   // Check if AI is configured (async: from user settings)
   aiConfigured = await isAIConfiguredAsync();
 
+  // Check if on-device mode is available for Fast recipe
+  onDeviceAvailable = await shouldUseOnDevice('fast');
+
   // Check if image generation is available (async)
   const imgReady = await isImageConfiguredAsync();
   if (!imgReady) {
@@ -87,6 +92,14 @@ async function init() {
 
 function updateAiStatus() {
   const requiresAi = recipeRequiresAI(selectedRecipeId);
+
+  // On-device mode for Fast recipe — no API key needed
+  if (requiresAi && onDeviceAvailable && selectedRecipeId === 'fast') {
+    elements.statusIndicator.textContent = 'Ready (On-device AI)';
+    elements.statusIndicator.classList.remove('error');
+    return;
+  }
+
   if (requiresAi && !aiConfigured) {
     elements.statusIndicator.textContent = 'API Key Missing for selected recipe — Open Settings ⚙️';
     elements.statusIndicator.classList.add('error');
@@ -309,7 +322,8 @@ function renderRecipeTile(recipe: typeof BUILT_IN_RECIPES[0], isPinned: boolean)
   const isActive = recipe.id === selectedRecipeId;
   const pinIcon = isPinned ? '📌' : '📍';
   const pinTitle = isPinned ? 'Unpin recipe' : 'Pin to top';
-  const capability = recipeCapabilityLabel(recipe.id);
+  const baseCapability = recipeCapabilityLabel(recipe.id);
+    const capability = (onDeviceAvailable && recipe.id === 'fast') ? 'On-device AI' : baseCapability;
   
   return `
     <div class="recipe-tile ${isActive ? 'active' : ''}" data-recipe="${recipe.id}">

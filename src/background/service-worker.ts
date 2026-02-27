@@ -38,6 +38,7 @@ import { getEncryptedEnvelopeForSync, importEncryptedEnvelope, invalidateCache a
 import { shareArticle, unshareArticle } from '../shared/blob-storage-service';
 import { getDefaultRecipeId, isDeterministicRecipe, isAIExtractRecipe } from '../shared/recipe-capabilities';
 import { renderDeterministicHtml } from '../shared/deterministic-renderer';
+import { shouldUseOnDevice, extractWithPromptAPI } from '../shared/prompt-api-service';
 
 // In-memory storage for AbortControllers (per request)
 const abortControllers = new Map<string, AbortController>();
@@ -829,20 +830,20 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
     });
   } else if (aiExtract) {
     // Hybrid path: AI cleans content, deterministic template renders it
+    const useOnDevice = await shouldUseOnDevice(recipeId);
+    const aiLabel = useOnDevice ? 'On-device AI' : 'AI';
     const aiStartTime = Date.now();
-    await updateRemixProgress(requestId, { status: 'analyzing', step: 'AI is cleaning content... (0s)' });
+    await updateRemixProgress(requestId, { status: 'analyzing', step: `${aiLabel} is cleaning content... (0s)` });
 
     const elapsedInterval = setInterval(async () => {
       const elapsedSec = Math.round((Date.now() - aiStartTime) / 1000);
-      await updateRemixProgress(requestId, { step: `AI is cleaning content... (${elapsedSec}s)` });
+      await updateRemixProgress(requestId, { step: `${aiLabel} is cleaning content... (${elapsedSec}s)` });
     }, 5000);
     elapsedIntervals.set(requestId, elapsedInterval);
 
-    const extractResult = await extractWithAI({
-      recipe,
-      domContent: content,
-      abortSignal: controller.signal,
-    });
+    const extractResult = useOnDevice
+      ? await extractWithPromptAPI({ recipe, domContent: content, abortSignal: controller.signal })
+      : await extractWithAI({ recipe, domContent: content, abortSignal: controller.signal });
 
     clearInterval(elapsedInterval);
     elapsedIntervals.delete(requestId);
@@ -1066,12 +1067,14 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
       content: originalArticle.originalContent,
     });
   } else if (aiExtract) {
+    const useOnDevice = await shouldUseOnDevice(recipeId);
+    const aiLabel = useOnDevice ? 'On-device AI' : 'AI';
     const aiStartTime = Date.now();
     await updateRemixProgress(requestId, {
       requestId,
       tabId: 0,
       status: 'analyzing',
-      step: 'AI is cleaning content... (0s)',
+      step: `${aiLabel} is cleaning content... (0s)`,
       startTime: aiStartTime,
       pageTitle: originalArticle.title,
       recipeId,
@@ -1079,15 +1082,13 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
 
     const elapsedInterval = setInterval(async () => {
       const elapsedSec = Math.round((Date.now() - aiStartTime) / 1000);
-      await updateRemixProgress(requestId, { step: `AI is cleaning content... (${elapsedSec}s)` });
+      await updateRemixProgress(requestId, { step: `${aiLabel} is cleaning content... (${elapsedSec}s)` });
     }, 5000);
     elapsedIntervals.set(requestId, elapsedInterval);
 
-    const extractResult = await extractWithAI({
-      recipe,
-      domContent: originalArticle.originalContent,
-      abortSignal: controller.signal,
-    });
+    const extractResult = useOnDevice
+      ? await extractWithPromptAPI({ recipe, domContent: originalArticle.originalContent, abortSignal: controller.signal })
+      : await extractWithAI({ recipe, domContent: originalArticle.originalContent, abortSignal: controller.signal });
 
     clearInterval(elapsedInterval);
     elapsedIntervals.delete(requestId);
