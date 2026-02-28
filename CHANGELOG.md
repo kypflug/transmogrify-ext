@@ -4,6 +4,15 @@ All notable changes to Transmogrifier will be documented in this file.
 
 ## [0.5.16] - 2026-02-28
 
+### Added
+- **Source lede detection** — Detects article ledes/abstracts/subheds via semantic CSS classes (`subtitle`, `standfirst`, `dek`, `abstract`, etc.) and og:description matching. Source ledes are used verbatim instead of AI-generated summaries, preventing duplicative introductions.
+- **Publication & retrieval dates** — All remixes now display the source article's publication date and the date the remix was performed in the article header meta line.
+- **Responsive image deduplication** — Consecutive images sharing the same base URL (different crop/size query parameters) are deduplicated, keeping the largest variant.
+
+### Changed
+- **Core 0.1.38** — Updated `@kypflug/transmogrifier-core` with `[LEDE]` marker handling in recipe prompts, lede→hero→body layout instructions, and date display guidance for all recipes.
+- **Layout ordering** — Enforced consistent layout: header → lede (italic, no drop cap) → hero image → article body (with drop cap on first paragraph).
+
 ### Security
 - **Rollup path traversal fix** — Added npm override to force `rollup@2.80.0` within `@crxjs/vite-plugin`, resolving 2 high severity vulnerabilities ([GHSA-mw96-cpmx-2vgc](https://github.com/advisories/GHSA-mw96-cpmx-2vgc) — Arbitrary File Write via Path Traversal).
 
