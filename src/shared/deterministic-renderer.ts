@@ -6,6 +6,10 @@ interface DeterministicRenderInput {
   content: string;
   excerpt?: string;
   author?: string;
+  /** Source article publication date (ISO or human-readable) */
+  publishDate?: string;
+  /** Date the remix was performed (ISO or human-readable) */
+  retrievedDate?: string;
 }
 
 export function renderDeterministicHtml(input: DeterministicRenderInput): string {
@@ -13,8 +17,12 @@ export function renderDeterministicHtml(input: DeterministicRenderInput): string
   const contentHtml = structuredTextToHtml(cleanedContent, input.title, input.sourceUrl);
   const title = input.title || 'Untitled';
 
-  // Build meta line: "Author · Source ↗" with the URL as a real link
-  const textParts = [input.author?.trim()].filter(Boolean);
+  // Build meta line: "Author · Jan 3, 2023 · Retrieved Feb 28, 2026 · Source ↗"
+  const textParts: string[] = [];
+  if (input.author?.trim()) textParts.push(input.author.trim());
+  if (input.publishDate) textParts.push(formatDateForDisplay(input.publishDate));
+  if (input.retrievedDate) textParts.push(`Retrieved ${formatDateForDisplay(input.retrievedDate)}`);
+
   const metaInner = escapeHtml(textParts.join(' · '))
     + (textParts.length ? ' · ' : '')
     + `<a href="${escapeHtml(input.sourceUrl || '')}" rel="noopener" target="_blank">Source ↗</a>`;
@@ -28,6 +36,17 @@ export function renderDeterministicHtml(input: DeterministicRenderInput): string
     .replace('{META}', metaInner)
     .replace('{EXCERPT}', excerptHtml)
     .replace('{CONTENT}', contentHtml);
+}
+
+/** Format an ISO date string or human-readable date for display. */
+function formatDateForDisplay(dateStr: string): string {
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  } catch {
+    return dateStr;
+  }
 }
 
 function structuredTextToHtml(content: string, title: string, sourceUrl: string): string {

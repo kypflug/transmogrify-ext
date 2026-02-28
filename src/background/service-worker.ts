@@ -827,6 +827,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
       title: pageTitle,
       sourceUrl: tab.url || '',
       content,
+      retrievedDate: new Date().toISOString().split('T')[0],
     });
   } else if (aiExtract) {
     // Hybrid path: AI cleans content, deterministic template renders it
@@ -863,6 +864,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
       content: extraction?.content || content,
       excerpt: extraction?.excerpt,
       author: sanitizeAuthor(extraction?.author),
+      retrievedDate: new Date().toISOString().split('T')[0],
     });
   } else {
     // Call AI service to generate HTML with elapsed time updates
@@ -1066,6 +1068,7 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
       title: originalArticle.title,
       sourceUrl: originalArticle.originalUrl,
       content: originalArticle.originalContent,
+      retrievedDate: new Date().toISOString().split('T')[0],
     });
   } else if (aiExtract) {
     const useOnDevice = await shouldUseOnDevice(recipeId);
@@ -1108,6 +1111,7 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
       content: extraction?.content || originalArticle.originalContent,
       excerpt: extraction?.excerpt,
       author: sanitizeAuthor(extraction?.author),
+      retrievedDate: new Date().toISOString().split('T')[0],
     });
   } else {
     const aiStartTime = Date.now();

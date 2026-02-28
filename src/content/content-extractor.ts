@@ -23,6 +23,8 @@ export interface ExtractedContent {
   author?: string;
   publishDate?: string;
   readingTime?: string;
+  /** Source lede/abstract/subhed detected from the page (semantically separate from body) */
+  lede?: string;
 }
 
 export interface ContentBlock {
@@ -70,6 +72,16 @@ export function extractContent(): ExtractedContent {
   content.mainContent = stripLeadingMetaBlocks(
     content.mainContent, content.title, content.author, content.publishDate
   );
+
+  // Detect and extract semantic lede (before image dedup, so position heuristics work)
+  const ledeResult = detectLede(content.mainContent, content.description);
+  if (ledeResult) {
+    content.lede = ledeResult.text;
+    content.mainContent = ledeResult.remainingBlocks;
+  }
+
+  // Deduplicate responsive image variants (same base URL, different crop/size params)
+  content.mainContent = deduplicateImages(content.mainContent);
 
   // Estimate reading time
   const wordCount = content.mainContent
@@ -209,6 +221,216 @@ function extractMainContent(): ContentBlock[] {
   }
 
   return deduplicateContent(blocks);
+}
+
+// ─── Lede Detection ────────────────────────────────────────────────────────
+
+/** Semantic CSS class patterns that indicate a lede/abstract/subhed element */
+const LEDE_CLASS_PATTERNS = [
+  'subtitle', 'subhead', 'subheadline', 'subhed', 'sub-headline',
+  'lede', 'lead', 'standfirst', 'dek',
+  'abstract', 'excerpt', 'summary-text',
+  'article-subtitle', 'post-subtitle', 'entry-subtitle',
+  'article-intro', 'intro-text', 'teaser',
+];
+
+/** Data attribute selectors for semantic lede elements */
+const LEDE_DATA_SELECTORS = [
+  '[data-type="abstract"]',
+  '[data-component="standfirst"]',
+  '[data-testid="article-subtitle"]',
+  '[data-testid="standfirst"]',
+];
+
+interface LedeResult {
+  text: string;
+  remainingBlocks: ContentBlock[];
+}
+
+/**
+ * Detect a semantic lede/abstract/subhed from the page content.
+ *
+ * Uses two tiers of detection (conservative to avoid false positives):
+ *
+ * Tier 1: Scan the DOM for elements with semantic CSS classes (subtitle,
+ *         subhed, standfirst, dek, abstract, etc.) before the main content.
+ *
+ * Tier 2: If og:description closely matches the first content paragraph AND
+ *         that paragraph is short (< 300 chars) and followed by an image or
+ *         heading, treat it as a lede.
+ *
+ * Returns the lede text and the content blocks with the lede removed, or
+ * null if no lede is detected.
+ */
+function detectLede(
+  blocks: ContentBlock[],
+  description?: string,
+): LedeResult | null {
+  // Tier 1: DOM-level semantic class detection
+  const ledeFromDom = detectLedeFromDom();
+  if (ledeFromDom) {
+    // Find and remove the matching block from mainContent
+    const normLede = normalizeForComparison(ledeFromDom);
+    const idx = blocks.findIndex(b =>
+      b.type === 'paragraph' &&
+      normalizeForComparison(b.content) === normLede
+    );
+    if (idx >= 0 && idx < 5) {
+      const remaining = [...blocks];
+      remaining.splice(idx, 1);
+      return { text: ledeFromDom, remainingBlocks: remaining };
+    }
+    // Even if we can't find an exact match in blocks, still return the DOM lede
+    return { text: ledeFromDom, remainingBlocks: blocks };
+  }
+
+  // Tier 2: og:description matching first paragraph
+  if (description && description.length > 20 && description.length < 300) {
+    const firstParagraph = blocks.find(b => b.type === 'paragraph');
+    if (firstParagraph) {
+      const normDesc = normalizeForComparison(description);
+      const normFirst = normalizeForComparison(firstParagraph.content);
+      // Check for ≥80% overlap
+      const shorter = normDesc.length <= normFirst.length ? normDesc : normFirst;
+      const longer = normDesc.length > normFirst.length ? normDesc : normFirst;
+      if (shorter.length > 0 && longer.includes(shorter) && shorter.length / longer.length > 0.8) {
+        const firstIdx = blocks.indexOf(firstParagraph);
+        // Verify structural separation: next non-empty block is an image or heading
+        const nextBlock = blocks.slice(firstIdx + 1).find(b =>
+          b.type !== 'divider' && (b.content?.trim() || b.src)
+        );
+        if (nextBlock && (nextBlock.type === 'image' || nextBlock.type === 'heading')) {
+          const remaining = [...blocks];
+          remaining.splice(firstIdx, 1);
+          return { text: firstParagraph.content, remainingBlocks: remaining };
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+/** Scan the DOM for lede-type elements before the main article body. */
+function detectLedeFromDom(): string | null {
+  const mainElement = findMainContent();
+  const articleEl = document.querySelector('article') || mainElement;
+  if (!articleEl) return null;
+
+  // Look for elements with semantic lede classes in the article region
+  for (const pattern of LEDE_CLASS_PATTERNS) {
+    const candidates = articleEl.querySelectorAll(`[class*="${pattern}"]`);
+    for (const el of candidates) {
+      const text = (el as HTMLElement).textContent?.trim();
+      if (text && text.length > 15 && text.length < 500) {
+        return text;
+      }
+    }
+  }
+
+  // Try data-attribute selectors
+  for (const selector of LEDE_DATA_SELECTORS) {
+    const el = articleEl.querySelector(selector);
+    if (el) {
+      const text = (el as HTMLElement).textContent?.trim();
+      if (text && text.length > 15 && text.length < 500) {
+        return text;
+      }
+    }
+  }
+
+  // Also check the page header area outside the main content
+  const headerEl = document.querySelector('header, .post-header, .article-header, .entry-header');
+  if (headerEl && headerEl !== articleEl) {
+    for (const pattern of LEDE_CLASS_PATTERNS) {
+      const el = headerEl.querySelector(`[class*="${pattern}"]`);
+      if (el) {
+        const text = (el as HTMLElement).textContent?.trim();
+        if (text && text.length > 15 && text.length < 500) {
+          return text;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+/** Normalize text for fuzzy comparison: lowercase, collapse whitespace, strip punctuation. */
+function normalizeForComparison(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, ' ').replace(/[^\w\s]/g, '').trim();
+}
+
+// ─── Responsive Image Deduplication ──────────────────────────────────────────
+
+/**
+ * Deduplicate responsive image variants: consecutive images sharing the same
+ * base URL path (ignoring query parameters) are reduced to just the largest.
+ */
+function deduplicateImages(blocks: ContentBlock[]): ContentBlock[] {
+  const result: ContentBlock[] = [];
+  let i = 0;
+
+  while (i < blocks.length) {
+    const block = blocks[i];
+    if (block.type !== 'image' || !block.src) {
+      result.push(block);
+      i++;
+      continue;
+    }
+
+    // Collect a run of consecutive image blocks with the same base URL
+    const basePath = getImageBasePath(block.src);
+    const group = [block];
+    let j = i + 1;
+    while (j < blocks.length && blocks[j].type === 'image' && blocks[j].src) {
+      if (getImageBasePath(blocks[j].src!) === basePath) {
+        group.push(blocks[j]);
+        j++;
+      } else {
+        break;
+      }
+    }
+
+    if (group.length > 1) {
+      // Keep the variant with the largest dimensions
+      const best = group.reduce((a, b) => {
+        const aSize = getImageSizeFromUrl(a.src!);
+        const bSize = getImageSizeFromUrl(b.src!);
+        return (aSize.w * aSize.h) >= (bSize.w * bSize.h) ? a : b;
+      });
+      result.push(best);
+    } else {
+      result.push(block);
+    }
+
+    i = j;
+  }
+
+  return result;
+}
+
+/** Extract the URL path without query string or fragment. */
+function getImageBasePath(url: string): string {
+  try {
+    const u = new URL(url);
+    return u.origin + u.pathname;
+  } catch {
+    // Fallback: strip everything after '?'
+    return url.split('?')[0].split('#')[0];
+  }
+}
+
+/** Extract width/height from common URL query parameters (w, h, width, height). */
+function getImageSizeFromUrl(url: string): { w: number; h: number } {
+  try {
+    const params = new URL(url).searchParams;
+    const w = parseInt(params.get('w') || params.get('width') || '0', 10) || 0;
+    const h = parseInt(params.get('h') || params.get('height') || '0', 10) || 0;
+    return { w, h };
+  } catch {
+    return { w: 0, h: 0 };
+  }
 }
 
 /**
@@ -953,8 +1175,16 @@ export function serializeContent(content: ExtractedContent): string {
   ];
 
   if (content.author || content.publishDate) {
-    const meta = [content.author, content.publishDate].filter(Boolean).join(' Ã¢â‚¬Â¢ ');
+    const meta = [content.author, content.publishDate].filter(Boolean).join(' • ');
     lines.push(`*${meta}*`, '');
+  }
+
+  // Retrieval date (when the remix was performed)
+  lines.push(`Retrieved: ${new Date().toISOString().split('T')[0]}`, '');
+
+  // Source lede/abstract/subhed (detected from the page)
+  if (content.lede) {
+    lines.push(`[LEDE]: ${content.lede}`, '');
   }
 
   for (const block of content.mainContent) {
