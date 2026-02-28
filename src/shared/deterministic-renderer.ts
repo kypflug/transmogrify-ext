@@ -60,6 +60,8 @@ function structuredTextToHtml(content: string, title: string, sourceUrl: string)
   let codeBuffer: string[] = [];
   let skipDetritusSection = false;
   let tableRows: string[] = [];
+  let inReferences = false;
+  let refCounter = 0;
 
   const DETRITUS_SECTIONS = new Set(['most popular', 'source info']);
 
@@ -69,7 +71,8 @@ function structuredTextToHtml(content: string, title: string, sourceUrl: string)
     if (text && !isGarbledParagraph(text)) {
       const paragraphNorm = normalizeParagraphForDedup(text);
       if (!isNearDuplicateParagraph(paragraphNorm, recentParagraphNorms)) {
-        blocks.push(`<p>${renderInline(text, sourceUrl)}</p>`);
+        const idAttr = inReferences ? ` id="ref-${++refCounter}"` : '';
+        blocks.push(`<p${idAttr}>${renderInline(text, sourceUrl)}</p>`);
         if (paragraphNorm.length >= 40) {
           recentParagraphNorms.push(paragraphNorm);
           if (recentParagraphNorms.length > 12) recentParagraphNorms.shift();
@@ -176,6 +179,14 @@ function structuredTextToHtml(content: string, title: string, sourceUrl: string)
       }
       skipDetritusSection = false;
 
+      // Track entry into references/bibliography section for footnote IDs
+      if (/^(references|notes|bibliography|endnotes|works cited)$/i.test(headingNorm)) {
+        inReferences = true;
+        refCounter = 0;
+      } else {
+        inReferences = false;
+      }
+
       if (headingText !== title) {
         const level = Math.min(6, headingMatch[1].length + 1);
         blocks.push(`<h${level}>${renderInline(headingText, sourceUrl)}</h${level}>`);
@@ -248,11 +259,24 @@ function renderInline(text: string, sourceUrl: string): string {
   for (const match of text.matchAll(linkRegex)) {
     const idx = match.index ?? 0;
     out += escapeWithSafeInlineTags(text.slice(cursor, idx));
-    const href = safeUrl(match[2].trim(), sourceUrl);
-    if (href) {
-      out += `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(match[1])}</a>`;
+
+    const linkText = match[1];
+    const rawHref = match[2].trim();
+
+    if (rawHref.startsWith('#')) {
+      // Fragment link (footnote ref or return link)
+      if (/^\d+$/.test(linkText)) {
+        out += `<a href="${escapeHtml(rawHref)}"><sup>${escapeHtml(linkText)}</sup></a>`;
+      } else {
+        out += `<a href="${escapeHtml(rawHref)}">${escapeWithSafeInlineTags(linkText)}</a>`;
+      }
     } else {
-      out += escapeHtml(match[1]);
+      const href = safeUrl(rawHref, sourceUrl);
+      if (href) {
+        out += `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeWithSafeInlineTags(linkText)}</a>`;
+      } else {
+        out += escapeWithSafeInlineTags(linkText);
+      }
     }
     cursor = idx + match[0].length;
   }
