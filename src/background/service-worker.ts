@@ -857,12 +857,23 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
     }
 
     const extraction = (extractResult.data as any)?.extraction;
-    aiSummary = extraction?.excerpt;
+
+    // Source lede enforcement: the [LEDE] marker in serialized content is canonical.
+    // Override the AI's excerpt if a source lede was detected.
+    const sourceLede = parseSourceLede(content);
+    let excerptToUse = extraction?.excerpt;
+    let contentToUse = extraction?.content || content;
+    if (sourceLede) {
+      excerptToUse = sourceLede;
+      contentToUse = stripLedeFromContent(contentToUse, sourceLede);
+    }
+
+    aiSummary = excerptToUse;
     finalHtml = renderDeterministicHtml({
       title: extraction?.title || pageTitle,
       sourceUrl: tab.url || '',
-      content: extraction?.content || content,
-      excerpt: extraction?.excerpt,
+      content: contentToUse,
+      excerpt: excerptToUse,
       author: sanitizeAuthor(extraction?.author),
       retrievedDate: new Date().toISOString().split('T')[0],
     });
@@ -1317,4 +1328,26 @@ function replaceImagePlaceholders(html: string, images: GeneratedImageData[]): s
   return result;
 }
 
+/** Extract the source lede text from serialized content's [LEDE] marker. */
+function parseSourceLede(serializedContent: string): string | null {
+  const match = /^\[LEDE\]:\s*(.+)$/m.exec(serializedContent);
+  return match ? match[1].trim() : null;
+}
+
+/** Strip lede text from AI-returned content body (AI may re-include it as a paragraph). */
+function stripLedeFromContent(aiContent: string, lede: string): string {
+  const normLede = lede.toLowerCase().replace(/\s+/g, ' ').trim();
+  return aiContent
+    .split('\n')
+    .filter(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return true;
+      // Strip raw [LEDE]: markers the AI may have passed through
+      if (/^\[LEDE\]:/i.test(trimmed)) return false;
+      // Strip lines that match the source lede text
+      const normLine = trimmed.toLowerCase().replace(/\s+/g, ' ');
+      return normLine !== normLede;
+    })
+    .join('\n');
+}
 

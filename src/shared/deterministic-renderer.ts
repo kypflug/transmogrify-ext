@@ -457,6 +457,9 @@ function isUiDetritusLine(line: string): boolean {
   const t = line.trim();
   if (t.length > 220) return false;
 
+  // Strip raw [LEDE]: markers that AI may pass through
+  if (/^\[LEDE\]:/i.test(t)) return true;
+
   if (/^Follow topics and authors from this story/i.test(t)) return true;
   if (/^Thanks for reading .*Subscribe/i.test(t)) return true;
   if (/^By subscribing, you agree/i.test(t)) return true;
