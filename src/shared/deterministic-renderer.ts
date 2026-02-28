@@ -40,6 +40,7 @@ function structuredTextToHtml(content: string, title: string, sourceUrl: string)
   let codeFenceOpen = false;
   let codeBuffer: string[] = [];
   let skipDetritusSection = false;
+  let tableRows: string[] = [];
 
   const DETRITUS_SECTIONS = new Set(['most popular', 'source info']);
 
@@ -73,6 +74,30 @@ function structuredTextToHtml(content: string, title: string, sourceUrl: string)
     codeBuffer = [];
   };
 
+  const flushTable = () => {
+    if (tableRows.length === 0) return;
+    const sepIdx = tableRows.findIndex(r => /^\|[\s\-:|]+\|$/.test(r));
+    const headerRows = sepIdx > 0 ? tableRows.slice(0, sepIdx) : [];
+    const bodyRows = sepIdx > 0 ? tableRows.slice(sepIdx + 1) : tableRows;
+
+    const parseRow = (row: string, cellTag: string) => {
+      const cells = row.replace(/^\|/, '').replace(/\|$/, '').split('|')
+        .map(c => `<${cellTag}>${renderInline(c.trim(), sourceUrl)}</${cellTag}>`).join('');
+      return `<tr>${cells}</tr>`;
+    };
+
+    let html = '<table>';
+    if (headerRows.length > 0) {
+      html += '<thead>' + headerRows.map(r => parseRow(r, 'th')).join('') + '</thead>';
+    }
+    if (bodyRows.length > 0) {
+      html += '<tbody>' + bodyRows.map(r => parseRow(r, 'td')).join('') + '</tbody>';
+    }
+    html += '</table>';
+    blocks.push(html);
+    tableRows = [];
+  };
+
   for (const rawLine of lines) {
     const line = rawLine.trim();
 
@@ -96,10 +121,29 @@ function structuredTextToHtml(content: string, title: string, sourceUrl: string)
     if (!line) {
       flushParagraph();
       flushList();
+      flushTable();
       continue;
     }
 
-    const headingMatch = /^(#{1,6})\s+(.+)$/.exec(line);
+    // Skip [Table] marker from content extractor
+    if (/^\[Table\]$/i.test(line)) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+
+    // Markdown table rows: | cell | cell |
+    if (/^\|.+\|$/.test(line)) {
+      flushParagraph();
+      flushList();
+      tableRows.push(line);
+      continue;
+    }
+
+    // Non-table line ends any pending table
+    flushTable();
+
+    const headingMatch= /^(#{1,6})\s+(.+)$/.exec(line);
     if (headingMatch) {
       flushParagraph();
       flushList();
@@ -173,6 +217,7 @@ function structuredTextToHtml(content: string, title: string, sourceUrl: string)
   if (codeFenceOpen) flushCode();
   flushParagraph();
   flushList();
+  flushTable();
   return blocks.join('\n');
 }
 
