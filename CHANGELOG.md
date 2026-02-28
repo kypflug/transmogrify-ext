@@ -2,6 +2,11 @@
 
 All notable changes to Transmogrifier will be documented in this file.
 
+## [0.5.16] - 2026-02-28
+
+### Security
+- **Rollup path traversal fix** — Added npm override to force `rollup@2.80.0` within `@crxjs/vite-plugin`, resolving 2 high severity vulnerabilities ([GHSA-mw96-cpmx-2vgc](https://github.com/advisories/GHSA-mw96-cpmx-2vgc) — Arbitrary File Write via Path Traversal).
+
 ## [0.5.15] - 2026-02-27
 
 ### Fixed
