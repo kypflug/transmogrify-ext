@@ -62,6 +62,7 @@ function structuredTextToHtml(content: string, title: string, sourceUrl: string)
   let tableRows: string[] = [];
   let inReferences = false;
   let refCounter = 0;
+  let figCounter = 0;
 
   const DETRITUS_SECTIONS = new Set(['most popular', 'source info']);
 
@@ -203,7 +204,7 @@ function structuredTextToHtml(content: string, title: string, sourceUrl: string)
       flushParagraph();
       flushList();
       const caption = parsedImage.caption || parsedImage.alt;
-      blocks.push(`<figure><img src="${escapeHtml(parsedImage.src)}" alt="${escapeHtml(parsedImage.alt)}" loading="lazy" /><figcaption>${escapeHtml(caption)}</figcaption></figure>`);
+      blocks.push(`<figure id="fig-${++figCounter}"><img src="${escapeHtml(parsedImage.src)}" alt="${escapeHtml(parsedImage.alt)}" loading="lazy" /><figcaption>${escapeHtml(caption)}</figcaption></figure>`);
       continue;
     }
 
