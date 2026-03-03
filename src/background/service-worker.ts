@@ -848,7 +848,19 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
     elapsedIntervals.set(requestId, elapsedInterval);
 
     const extractResult = useOnDevice
-      ? await extractWithPromptAPI({ recipe, domContent: content, abortSignal: controller.signal })
+      ? await extractWithPromptAPI({
+          recipe,
+          domContent: content,
+          abortSignal: controller.signal,
+          onProgress: (chunk, total) => {
+            if (total > 1) {
+              const elapsedSec = Math.round((Date.now() - aiStartTime) / 1000);
+              updateRemixProgress(requestId, {
+                step: `On-device AI: chunk ${chunk}/${total} (${elapsedSec}s)`,
+              });
+            }
+          },
+        })
       : await extractWithAI({ recipe, domContent: content, abortSignal: controller.signal });
 
     clearInterval(elapsedInterval);
@@ -1108,7 +1120,19 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
     elapsedIntervals.set(requestId, elapsedInterval);
 
     const extractResult = useOnDevice
-      ? await extractWithPromptAPI({ recipe, domContent: originalArticle.originalContent, abortSignal: controller.signal })
+      ? await extractWithPromptAPI({
+          recipe,
+          domContent: originalArticle.originalContent,
+          abortSignal: controller.signal,
+          onProgress: (chunk, total) => {
+            if (total > 1) {
+              const elapsedSec = Math.round((Date.now() - aiStartTime) / 1000);
+              updateRemixProgress(requestId, {
+                step: `On-device AI: chunk ${chunk}/${total} (${elapsedSec}s)`,
+              });
+            }
+          },
+        })
       : await extractWithAI({ recipe, domContent: originalArticle.originalContent, abortSignal: controller.signal });
 
     clearInterval(elapsedInterval);
