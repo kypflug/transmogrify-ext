@@ -645,15 +645,18 @@ function isHiddenOrSkipped(el: HTMLElement): boolean {
 function elementToBlock(el: HTMLElement, processed: Set<Element>): ContentBlock | null {
   const tag = el.tagName.toLowerCase();
 
-  // Headings
-  if (/^h[1-6]$/.test(tag)) {
+  // Headings (native <hN> or ARIA role="heading" + aria-level)
+  const ariaLevel = el.getAttribute('role') === 'heading'
+    ? parseInt(el.getAttribute('aria-level') || '0', 10)
+    : 0;
+  if (/^h[1-6]$/.test(tag) || (ariaLevel >= 1 && ariaLevel <= 6)) {
     const text = preserveInlineMarkup(el);
     if (text.length > 0) {
       processed.add(el);
       el.querySelectorAll('*').forEach(child => processed.add(child));
       return {
         type: 'heading',
-        level: parseInt(tag[1]),
+        level: /^h[1-6]$/.test(tag) ? parseInt(tag[1]) : ariaLevel,
         content: text,
       };
     }
@@ -925,7 +928,19 @@ function serializeInlineContent(el: HTMLElement): string {
         const href = child.getAttribute('href');
         const text = serializeInlineContent(child).trim();
         if (href && text) {
-          result += `[${text}](${href})`;
+          // Footnote pattern: <a><sup>N</sup></a> → <sup>[N](#ref-N)</sup>
+          const supMatch = /^<sup>(\d+)<\/sup>$/i.exec(text);
+          if (supMatch) {
+            result += `<sup>[${supMatch[1]}](#ref-${supMatch[1]})</sup>`;
+          } else {
+            // Self-referencing URL: link to same page → fragment-only
+            const fragment = extractSelfFragment(href);
+            if (fragment) {
+              result += `[${text}](${fragment})`;
+            } else {
+              result += `[${text}](${href})`;
+            }
+          }
         } else {
           result += text;
         }
@@ -946,19 +961,66 @@ function serializeInlineContent(el: HTMLElement): string {
   return result;
 }
 
+/**
+ * Detect when a link points back to the current page and return just the
+ * fragment. Normalizes figure patterns (#F1, #fig1, #figure-1) to #fig-N.
+ */
+function extractSelfFragment(href: string): string | null {
+  if (!href) return null;
+
+  // Already a fragment-only link
+  if (href.startsWith('#')) {
+    return normalizeFigureFragment(href);
+  }
+
+  try {
+    const linkUrl = new URL(href, window.location.href);
+    const currentUrl = new URL(window.location.href);
+
+    // Same origin + pathname → self-referencing link
+    if (
+      linkUrl.origin === currentUrl.origin &&
+      linkUrl.pathname === currentUrl.pathname &&
+      linkUrl.hash
+    ) {
+      return normalizeFigureFragment(linkUrl.hash);
+    }
+  } catch {
+    // Malformed URL — not a self-reference
+  }
+
+  return null;
+}
+
+/** Normalize figure-like fragments (#F1, #fig1, #figure-1) to #fig-N. */
+function normalizeFigureFragment(hash: string): string {
+  const figMatch = /^#(?:fig(?:ure)?[-_]?|F)(\d+)$/i.exec(hash);
+  if (figMatch) return `#fig-${figMatch[1]}`;
+  return hash;
+}
+
 function findCaption(img: HTMLElement): string | undefined {
-  // Check for adjacent caption elements
-  const next = img.nextElementSibling;
-  if (next?.tagName.toLowerCase() === 'figcaption') {
-    return next.textContent?.trim();
+  // Walk up to 4 ancestor levels looking for a <figcaption>
+  let node: Element | null = img;
+  for (let depth = 0; depth < 4 && node; depth++) {
+    // Check adjacent sibling first (at each level)
+    const next = node.nextElementSibling;
+    if (next?.tagName.toLowerCase() === 'figcaption') {
+      const text = next.textContent?.trim();
+      if (text) return text;
+    }
+
+    const parent: Element | null = node.parentElement;
+    if (parent) {
+      const fc = parent.querySelector('figcaption');
+      if (fc) {
+        const text = fc.textContent?.trim();
+        if (text) return text;
+      }
+    }
+    node = parent;
   }
-  
-  const parent = img.parentElement;
-  if (parent?.tagName.toLowerCase() === 'figure') {
-    const caption = parent.querySelector('figcaption');
-    return caption?.textContent?.trim();
-  }
-  
+
   return undefined;
 }
 
@@ -984,6 +1046,16 @@ const PLACEHOLDER_PATTERNS = [
   /\/transparent\./i,
 ];
 
+/** Known tracking/analytics URL patterns — never article content. */
+const TRACKING_URL_PATTERNS = [
+  /google-analytics\.com/i,
+  /googletagmanager\.com/i,
+  /\/collect\?/i,
+  /doubleclick\.net/i,
+  /facebook\.com\/tr/i,
+  /bat\.bing\.com/i,
+];
+
 /**
  * Resolve the best available image URL for an <img> element.
  *
@@ -996,6 +1068,9 @@ const PLACEHOLDER_PATTERNS = [
  */
 function resolveImageSrc(img: HTMLImageElement): string | null {
   const src = img.src;
+
+  // Skip known tracking/analytics URLs
+  if (src && TRACKING_URL_PATTERNS.some(p => p.test(src))) return null;
 
   // Check if the current src looks like a placeholder
   const isPlaceholder = !src

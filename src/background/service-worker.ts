@@ -771,6 +771,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
 
   // Request content extraction from content script
   let content: string;
+  let extractMeta: { title?: string; author?: string; publishDate?: string; lede?: string } | undefined;
   try {
     console.log('[Transmogrifier] Requesting content extraction...');
     let extractResponse;
@@ -803,6 +804,7 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
       return { success: false, error, requestId };
     }
     content = extractResponse.content;
+    extractMeta = extractResponse.meta as typeof extractMeta;
     console.log('[Transmogrifier] Content extracted, length:', content.length);
   } catch (error) {
     const errorMsg = `Content script error: ${error}`;
@@ -824,9 +826,12 @@ async function performRemix(message: RemixMessage): Promise<RemixResponse> {
   if (deterministic) {
     await updateRemixProgress(requestId, { status: 'analyzing', step: 'Applying deterministic template...' });
     finalHtml = renderDeterministicHtml({
-      title: pageTitle,
+      title: extractMeta?.title || pageTitle,
       sourceUrl: tab.url || '',
       content,
+      excerpt: extractMeta?.lede,
+      author: sanitizeAuthor(extractMeta?.author),
+      publishDate: extractMeta?.publishDate,
       retrievedDate: new Date().toISOString().split('T')[0],
     });
   } else if (aiExtract) {
@@ -1079,6 +1084,7 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
       title: originalArticle.title,
       sourceUrl: originalArticle.originalUrl,
       content: originalArticle.originalContent,
+      excerpt: parseSourceLede(originalArticle.originalContent) ?? undefined,
       retrievedDate: new Date().toISOString().split('T')[0],
     });
   } else if (aiExtract) {
@@ -1116,11 +1122,23 @@ async function performRespin(message: RemixMessage): Promise<RemixResponse> {
     }
 
     const extraction = (extractResult.data as any)?.extraction;
+
+    // Source lede enforcement: the [LEDE] marker in stored content is canonical.
+    // Override the AI's excerpt if a source lede was detected.
+    const sourceLede = parseSourceLede(originalArticle.originalContent);
+    let excerptToUse = extraction?.excerpt;
+    let contentToUse = extraction?.content || originalArticle.originalContent;
+    if (sourceLede) {
+      excerptToUse = sourceLede;
+      contentToUse = stripLedeFromContent(contentToUse, sourceLede);
+    }
+
+    aiSummary = excerptToUse;
     finalHtml = renderDeterministicHtml({
       title: extraction?.title || originalArticle.title,
       sourceUrl: originalArticle.originalUrl,
-      content: extraction?.content || originalArticle.originalContent,
-      excerpt: extraction?.excerpt,
+      content: contentToUse,
+      excerpt: excerptToUse,
       author: sanitizeAuthor(extraction?.author),
       retrievedDate: new Date().toISOString().split('T')[0],
     });

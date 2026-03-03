@@ -14,7 +14,7 @@ chrome.runtime.onMessage.addListener(
   }
 );
 
-async function handleMessage(message: RemixMessage): Promise<{ success: boolean; error?: string; content?: string }> {
+async function handleMessage(message: RemixMessage): Promise<{ success: boolean; error?: string; content?: string; meta?: { title: string; author?: string; publishDate?: string; lede?: string } }> {
   switch (message.type) {
     case 'EXTRACT_CONTENT':
       // Extract semantic content from the page
@@ -26,6 +26,12 @@ async function handleMessage(message: RemixMessage): Promise<{ success: boolean;
         return { 
           success: true, 
           content: serialized,
+          meta: {
+            title: extracted.title,
+            author: extracted.author,
+            publishDate: extracted.publishDate,
+            lede: extracted.lede,
+          },
         };
       } catch (error) {
         console.error('[Transmogrifier] Extraction error:', error);
