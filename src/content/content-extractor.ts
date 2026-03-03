@@ -83,6 +83,9 @@ export function extractContent(): ExtractedContent {
   // Deduplicate responsive image variants (same base URL, different crop/size params)
   content.mainContent = deduplicateImages(content.mainContent);
 
+  // Promote the first significant image to before the first paragraph (hero image)
+  content.mainContent = promoteHeroImage(content.mainContent);
+
   // Estimate reading time
   const wordCount = content.mainContent
     .filter(b => b.type === 'paragraph' || b.type === 'heading')
@@ -410,24 +413,64 @@ function deduplicateImages(blocks: ContentBlock[]): ContentBlock[] {
   return result;
 }
 
-/** Extract the URL path without query string or fragment. */
+/**
+ * Promote the first significant image to before the first paragraph.
+ *
+ * Many pages place a hero/lead image visually at the top, but in the DOM
+ * it may appear after the opening paragraph. This pass moves it so the
+ * serialized content matches the visual layout: lede → hero image → body.
+ */
+function promoteHeroImage(blocks: ContentBlock[]): ContentBlock[] {
+  const MAX_SCAN = 8;
+  const limit = Math.min(blocks.length, MAX_SCAN);
+
+  const firstParaIdx = blocks.findIndex((b, i) => i < limit && b.type === 'paragraph');
+  if (firstParaIdx < 0) return blocks;
+
+  // Find the first image AFTER the first paragraph (within the scan window)
+  let firstImgIdx = -1;
+  for (let i = firstParaIdx + 1; i < limit; i++) {
+    if (blocks[i].type === 'image') {
+      firstImgIdx = i;
+      break;
+    }
+  }
+  if (firstImgIdx < 0) return blocks; // image already before paragraph, or no image
+
+  // Move the image to just before the first paragraph
+  const result = [...blocks];
+  const [img] = result.splice(firstImgIdx, 1);
+  result.splice(firstParaIdx, 0, img);
+  return result;
+}
+
+/** Extract the URL path without query string or fragment, normalizing CMS size suffixes. */
 function getImageBasePath(url: string): string {
   try {
     const u = new URL(url);
-    return u.origin + u.pathname;
+    // Strip CMS-embedded size suffixes like -640x427, -1152x648 from filenames
+    const normalizedPath = u.pathname.replace(/-\d+x\d+(\.\w+)$/, '$1');
+    return u.origin + normalizedPath;
   } catch {
-    // Fallback: strip everything after '?'
-    return url.split('?')[0].split('#')[0];
+    // Fallback: strip query/fragment and size suffixes
+    return url.split('?')[0].split('#')[0].replace(/-\d+x\d+(\.\w+)$/, '$1');
   }
 }
 
-/** Extract width/height from common URL query parameters (w, h, width, height). */
+/** Extract width/height from URL query parameters or CMS filename patterns. */
 function getImageSizeFromUrl(url: string): { w: number; h: number } {
   try {
-    const params = new URL(url).searchParams;
-    const w = parseInt(params.get('w') || params.get('width') || '0', 10) || 0;
-    const h = parseInt(params.get('h') || params.get('height') || '0', 10) || 0;
-    return { w, h };
+    const u = new URL(url);
+    // Try query parameters first (e.g. ?w=640&h=427)
+    const w = parseInt(u.searchParams.get('w') || u.searchParams.get('width') || '0', 10) || 0;
+    const h = parseInt(u.searchParams.get('h') || u.searchParams.get('height') || '0', 10) || 0;
+    if (w > 0 || h > 0) return { w, h };
+
+    // Try CMS filename pattern (e.g. image-1152x648.jpg)
+    const pathMatch = /-(\d+)x(\d+)\.\w+$/.exec(u.pathname);
+    if (pathMatch) return { w: parseInt(pathMatch[1], 10), h: parseInt(pathMatch[2], 10) };
+
+    return { w: 0, h: 0 };
   } catch {
     return { w: 0, h: 0 };
   }
