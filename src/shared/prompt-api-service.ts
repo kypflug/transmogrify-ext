@@ -64,9 +64,10 @@ export async function checkPromptAPIAvailability(): Promise<PromptAPIAvailabilit
 
     const availability = await LanguageModel.availability();
 
-    // Edge/Chrome use 'readily' for immediately available, 'after-download' for downloadable
-    if (availability === 'readily') return 'available';
-    if (availability === 'after-download') return 'downloadable';
+    // Edge uses 'available', Chrome uses 'readily'
+    if (availability === 'readily' || availability === 'available') return 'available';
+    // Edge uses 'downloadable'/'downloading', Chrome uses 'after-download'
+    if (availability === 'after-download' || availability === 'downloadable' || availability === 'downloading') return 'downloadable';
     return 'unavailable';
   } catch {
     return 'unavailable';
@@ -138,8 +139,9 @@ export async function extractWithPromptAPI(options: {
   let session: any;
   try {
     // Create a LanguageModel session with the system prompt
+    // Edge uses initialPrompts; systemPrompt is the older Chrome-only shorthand
     session = await LanguageModel.create({
-      systemPrompt: system,
+      initialPrompts: [{ role: 'system', content: system }],
       temperature: 0.3,
       topK: 40,
       signal: abortSignal,
